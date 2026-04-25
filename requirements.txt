@@ -2,6 +2,7 @@
 # Phase 1: Core
 PyYAML>=6.0
 fastapi>=0.104.0
+python-multipart>=0.0.6
 uvicorn[standard]>=0.24.0
 
 # Phase 2: Cryptography
@@ -10,4 +11,5 @@ pycryptodome>=3.19.0
 # Phase 5: SDK
 httpx>=0.25.0
 
-# Phase 6: Frontend build tool (optional, frontend uses npm)
+# Phase 2R: Health-scored discovery
+psutil>=5.9.0

@@ -2,7 +2,7 @@
 
 > **LAN-Optimized P2P Distributed Hash Table (DHT) Storage Framework**
 
-A modular, trackerless peer-to-peer file storage system featuring AES-256-GCM authenticated encryption, Merkle-verified content addressing, parallel swarmed downloads, O(N) streaming architecture, and a real-time React dashboard.
+A modular, trackerless peer-to-peer file storage system featuring AES-256-GCM authenticated encryption, Merkle-verified content addressing, parallel swarmed downloads, O(N) streaming architecture, a real-time React dashboard, and Docker containerization.
 
 ---
 
@@ -225,6 +225,7 @@ api:
 | Discovery | UDP broadcast, `psutil` health metrics |
 | Frontend | React 19, Vite 8, React Router, Zustand, Recharts, lucide-react |
 | Storage | Local filesystem, JSON manifests, `FileResponse` streaming |
+| DevOps | Docker, Docker Compose, nginx, multi-stage builds |
 
 ---
 
@@ -234,6 +235,49 @@ api:
 |----------|-------------|
 | [PROGRESS.md](PROGRESS.md) | Phase-by-phase implementation tracker |
 | [BENCHMARKS.md](BENCHMARKS.md) | All performance data and test results |
+
+---
+
+## 🐳 Docker
+
+### Quick Start
+```bash
+docker compose up --build
+```
+
+| Service | URL | Port Mapping |
+|---------|-----|--------------|
+| **Dashboard** | http://localhost:3000 | 3000 → nginx:80 |
+| **API** | http://localhost:8000 | 8000 → uvicorn:8000 |
+| **TCP P2P** | — | 50001 → 50001 |
+| **UDP Discovery** | — | 50000/udp → 50000/udp |
+
+### Docker Files
+
+| File | Purpose |
+|------|---------|
+| `backend/Dockerfile` | Python 3.11-slim + FastAPI + Uvicorn |
+| `frontend/Dockerfile` | Multi-stage: Node 18 build → nginx:alpine |
+| `docker-compose.yml` | Orchestrates both services with health checks |
+| `.dockerignore` | Excludes venv, storage, logs from build context |
+
+### Commands
+```bash
+# Build and start
+docker compose up --build
+
+# Run in background
+docker compose up -d
+
+# View logs
+docker compose logs -f
+
+# Stop
+docker compose down
+
+# Rebuild single service
+docker compose up --build distristore-backend
+```
 
 ---
 

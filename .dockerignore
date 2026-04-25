@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+
+# Storage & logs
+.storage/
+*.log
+*.bin
+distristore.log
+
+# Frontend (handled separately)
+frontend/node_modules/
+frontend/dist/
+
+# Git & IDE
+.git/
+.gitignore
+.vscode/
+.idea/
+*.swp
+
+# Docs (not needed in container)
+*.md
+!README.md
+
+# Docker
+docker-compose.yml

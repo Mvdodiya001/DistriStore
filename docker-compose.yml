@@ -1,0 +1,42 @@
+# ─────────────────────────────────────────────────────────
+# DistriStore — Docker Compose Orchestrator
+# Run: docker compose up --build
+# ─────────────────────────────────────────────────────────
+
+services:
+  # ── Backend: FastAPI + P2P Node ─────────────────────────
+  distristore-backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: distristore-backend
+    ports:
+      - "8001:8001"       # FastAPI REST API
+      - "50001:50001"     # TCP P2P chunk transfer
+      - "50000:50000/udp" # UDP LAN discovery
+    volumes:
+      - ./.storage:/app/.storage  # Persist chunks across restarts
+    environment:
+      - DS_NAME=distristore-node
+      - DS_TCP_PORT=50001
+      - DS_UDP_PORT=50000
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/status')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # ── Frontend: React Dashboard (Nginx) ───────────────────
+  distristore-frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: distristore-frontend
+    ports:
+      - "3000:80"         # Dashboard at http://localhost:3000
+    depends_on:
+      distristore-backend:
+        condition: service_healthy
+    restart: unless-stopped
