@@ -283,4 +283,4 @@ docker compose up --build distristore-backend
 
 ## License
 
-MIT
+Apache 2.0
