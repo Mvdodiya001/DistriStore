@@ -1,7 +1,7 @@
 # DistriStore — Project Progress Tracker
 
 > **LAN-Optimized P2P Distributed Hash Table (DHT) Storage Framework**
-> Last Updated: 2026-04-25
+> Last Updated: 2026-04-26
 
 ---
 
@@ -19,9 +19,10 @@ Phase 2R (Research)       ██████████████████
 Phase 3O (Optimization)   ████████████████████ 100% ✅
 Phase 8 (Enterprise UI)   ████████████████████ 100% ✅
 Phase 9 (Docker)          ████████████████████ 100% ✅
+Phase 10 (Dynamic Ports)  ████████████████████ 100% ✅
 ```
 
-**Current Position: All 11 phases complete. Docker-ready for deployment.**
+**Current Position: All 12 phases complete. Production-ready with Docker + native deployment.**
 
 ---
 
@@ -145,13 +146,13 @@ Phase 9 (Docker)          ██████████████████
 
 | Metric | Before | After | Speedup |
 |--------|--------|-------|---------|
-| **100MB total** | 19.96s | **0.64s** | **31x** |
-| 100MB encrypt | 10.03s | 0.37s | 27x |
-| 100MB decrypt | 9.93s | 0.27s | 37x |
-| ProcessPool vs sequential | 1x | **9.13x** | GIL bypassed |
-| O(N) linearity (10MB→100MB) | — | **5.6x ratio** | Confirmed |
+| **100MB total** | 19.96s | **0.67s** | **29.8x** |
+| 100MB encrypt | 10.03s | 0.38s | 26x |
+| 100MB decrypt | 9.93s | 0.29s | 34x |
+| ProcessPool vs sequential | 1x | **8.52x** | GIL bypassed |
+| O(N) linearity (10MB→100MB) | — | **5.9x ratio** | Confirmed |
 
-**Verification:** `python -m tests.test_phase3_perf` — 100MB in 0.64s ✅
+**Verification:** `python -m tests.test_phase3_perf` — 100MB in 0.67s ✅
 
 ---
 
@@ -211,7 +212,40 @@ Phase 9 (Docker)          ██████████████████
 | `distristore-backend` | python:3.11-slim | 8000, 50001, 50000/udp | FastAPI + P2P node |
 | `distristore-frontend` | nginx:alpine | 3000 → 80 | React dashboard |
 
-**Verification:** `docker compose config --quiet` — ✅ Valid
+**Verification:** `docker compose config --quiet` — ✅ Valid | `docker compose up --build` — ✅ Running
+
+---
+
+## 🔷 Phase 10 — Dynamic Port Resolution & Deployment Scripts
+
+### Dynamic Port Allocation
+
+| Component | File | Change | Status |
+|-----------|------|--------|--------|
+| TCP Server (OS-assigned) | `backend/network/connection.py` | `port=0` → `getsockname()` extracts actual port | ✅ |
+| Node State (tcp_port) | `backend/node/state.py` | Added `tcp_port: int = 0` attribute | ✅ |
+| UDP Discovery (dynamic HELLO) | `backend/network/discovery.py` | HELLO reads `state.tcp_port`, SO_REUSEADDR before bind | ✅ |
+| Node Orchestrator | `backend/node/node.py` | Removed hardcoded `tcp_port` arg from `start_discovery()` | ✅ |
+| API Port Fallback | `backend/main.py` | Loop tries ports 8000→8010, catches `OSError` | ✅ |
+
+### Native Deployment Scripts
+
+| Script | Platform | Purpose | Status |
+|--------|----------|---------|--------|
+| `setup.sh` | Linux/macOS | Creates `.venv` + pip + npm install | ✅ |
+| `setup.bat` | Windows | Creates `.venv` + pip + npm install | ✅ |
+| `start.sh` | Linux/macOS | Backend (background) + Vite frontend | ✅ |
+| `start.bat` | Windows | Backend (new window) + Vite frontend | ✅ |
+
+### Docker vs Local Benchmarks
+
+| Metric | Local | Docker | Overhead |
+|--------|-------|--------|----------|
+| 1MB Upload | ~45ms | 54ms | +20% |
+| 1MB Download | ~30ms | 35ms | +17% |
+| Frontend load | — | 2ms | nginx |
+
+**Verification:** All 12 test suites pass ✅
 
 ---
 
@@ -268,6 +302,8 @@ distristore/
 │   ├── test_phase5.py               # API endpoints (HTTP)
 │   └── test_phase3_perf.py          # 100MB O(N) performance
 ├── config.yaml                      # Node configuration
+├── setup.sh / setup.bat             # One-command environment setup
+├── start.sh / start.bat             # One-command launch scripts
 ├── BENCHMARKS.md                    # Performance data
 ├── README.md                        # Project documentation
 └── PROGRESS.md                      # ← This file
@@ -308,6 +344,14 @@ cd frontend && npx vite build
 
 ## 🚀 Run the Project
 
+### Native (Recommended)
+```bash
+cd distristore
+./setup.sh       # First time only
+./start.sh       # Backend + Frontend
+```
+
+### Manual
 ```bash
 # Backend (Terminal 1)
 cd distristore && source .venv/bin/activate
@@ -316,4 +360,12 @@ python -m backend.main
 # Frontend (Terminal 2)
 cd distristore/frontend
 npm run dev
+```
+
+### Docker
+```bash
+cd distristore
+docker compose up --build
+# Dashboard: http://localhost:3000
+# API: http://localhost:8001
 ```

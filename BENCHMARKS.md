@@ -1,7 +1,7 @@
 # DistriStore — Benchmarks
 
 > All benchmarks run on the same machine with AES-256-GCM encryption + Merkle verification enabled.
-> Last verified: 2026-04-25 (Phase 8 re-verification pass)
+> Last verified: 2026-04-26 (Phase 10 — Dynamic Ports + Docker re-verification)
 
 ---
 
@@ -42,11 +42,11 @@
 
 | Metric | Before (Phase 2) | After (Phase 3) | Speedup |
 |--------|-------------------|------------------|---------|
-| **100MB total** | 19.96s | **0.79s** | **25.3x** |
-| 100MB chunk + encrypt | 10.03s | 0.45s | 22x |
-| 100MB merge + decrypt | 9.93s | 0.35s | 28x |
-| 10MB merge (in-memory) | 1009ms | 81.7ms | 12x |
-| 10MB merge (to disk) | 982ms | 58.0ms | 17x |
+| **100MB total** | 19.96s | **0.67s** | **29.8x** |
+| 100MB chunk + encrypt | 10.03s | 0.38s | 26x |
+| 100MB merge + decrypt | 9.93s | 0.29s | 34x |
+| 10MB merge (in-memory) | 1009ms | 73.3ms | 14x |
+| 10MB merge (to disk) | 982ms | 52.6ms | 19x |
 
 ### What Changed
 
@@ -66,8 +66,8 @@ Parallel encryption/decryption of 8 × 256KB chunks using multiple CPU cores:
 
 | Operation | Sequential | Parallel | Speedup |
 |-----------|-----------|----------|---------|
-| Encrypt (8 chunks) | 498ms | 59ms | **8.40x** |
-| Decrypt (8 chunks) | ~500ms | 33ms | **~15x** |
+| Encrypt (8 chunks) | 405ms | 48ms | **8.52x** |
+| Decrypt (8 chunks) | ~400ms | 31ms | **~13x** |
 
 > The ProcessPoolExecutor bypasses Python's Global Interpreter Lock (GIL),
 > enabling true CPU parallelism for crypto operations.
@@ -80,10 +80,10 @@ Testing that time scales linearly with file size (not quadratically):
 
 | File Size | Time | Ratio |
 |-----------|------|-------|
-| 10 MB | 0.17s | — |
-| 100 MB | 0.79s | **4.6x** |
+| 10 MB | 0.11s | — |
+| 100 MB | 0.67s | **5.9x** |
 
-> **Expected ratio for O(N): ~10x. Actual: 4.6x** — better than linear!
+> **Expected ratio for O(N): ~10x. Actual: 5.9x** — better than linear!
 > This is because fixed overhead (key derivation, file hash) is amortized over more chunks.
 > If it were O(N²), the ratio would be ~100x.
 
@@ -118,8 +118,8 @@ Testing that time scales linearly with file size (not quadratically):
 
 | Method | Time | Throughput |
 |--------|------|------------|
-| Sequential download (8 chunks) | 52.1ms | 40.2 MB/s |
-| Parallel (concurrency=5) | 171.3ms | 12.2 MB/s |
+| Sequential download (8 chunks) | 33.4ms | 62.8 MB/s |
+| Parallel (concurrency=5) | 150.0ms | 14.0 MB/s |
 
 > On localhost, sequential is faster (no latency to hide).
 > On a real LAN with multiple peers, parallel swarming provides significant speedup.
@@ -129,8 +129,8 @@ Testing that time scales linearly with file size (not quadratically):
 | Metric | Value |
 |--------|-------|
 | Health score computation time | <1ms |
-| Health score average (5 samples) | 1620.0 |
-| Health score variance (5 samples) | 801.6 |
+| Health score average (5 samples) | 2249.0 |
+| Health score variance (5 samples) | 1370.4 |
 | HELLO message size | ~300 bytes |
 | Metrics included | RAM, CPU freq, CPU load, disk free |
 
@@ -142,34 +142,9 @@ Testing that time scales linearly with file size (not quadratically):
 |-----------|--------------|---------------|-------------|
 | 1 MB | 31.3 MB/s | 28.4 MB/s | 14.7 MB/s |
 | 10 MB | 141.6 MB/s | 113.9 MB/s | 57.4 MB/s |
-| 100 MB | 222.2 MB/s | 285.7 MB/s | 126.6 MB/s |
+| 100 MB | 263.2 MB/s | 344.8 MB/s | 149.3 MB/s |
 
 > Throughput improves with file size due to PBKDF2 key derivation being amortized.
-
----
-
-## 🔄 How to Run
-
-```bash
-cd distristore
-source .venv/bin/activate
-
-# Core benchmark (10 file sizes)
-python -m backend.benchmark.benchmark
-
-# 100MB performance test
-python -m tests.test_phase3_perf
-
-# Security tests
-python -m tests.test_phase2_gcm
-python -m tests.test_phase2_merkle
-
-# Swarming test (starts a server)
-python -m tests.test_phase2_swarm
-
-# Discovery health test
-python -m tests.test_phase2_health
-```
 
 ---
 
@@ -196,11 +171,115 @@ The `/download/{hash}` endpoint uses `FileResponse` + `BackgroundTasks` for O(1)
 
 ---
 
+## 📊 9. Docker Containerization Benchmarks (Phase 9)
+
+### Container Build Sizes
+
+| Image | Base | Final Size |
+|-------|------|------------|
+| `distristore-backend` | python:3.11-slim | 700 MB |
+| `distristore-frontend` | nginx:alpine (multi-stage) | 93.5 MB |
+
+### Docker API Performance
+
+| Operation | File Size | Time | Notes |
+|-----------|-----------|------|-------|
+| Upload (via HTTP to container) | 1 MB | 54ms | python:3.11-slim on Docker |
+| Upload (via HTTP to container) | 5 MB | 71ms | python:3.11-slim on Docker |
+| Download (via HTTP from container) | 1 MB | 35ms | FileResponse streaming |
+| Frontend page load | — | 2ms | nginx:alpine CDN-level speed |
+| Health check response | — | <5ms | `/status` endpoint |
+
+### Docker vs Local Performance Comparison
+
+| Metric | Local (Native) | Docker Container | Overhead |
+|--------|----------------|------------------|----------|
+| 100MB Chunk + Encrypt | 0.38s | — | — |
+| 100MB Merge + Decrypt | 0.29s | — | — |
+| 1MB Upload (HTTP API) | ~45ms | 54ms | +20% |
+| 1MB Download (HTTP API) | ~30ms | 35ms | +17% |
+| Frontend load (nginx) | — | 2ms | Excellent |
+| Container startup | — | ~5.7s | Health check wait |
+
+> Docker overhead is minimal (~17-20%) for HTTP API operations.
+> The frontend served via nginx:alpine is extremely fast (2ms page load).
+
+### Port Allocation
+
+| Service | Local (Native) | Docker |
+|---------|---------------|--------|
+| FastAPI API | Dynamic (8000-8010 fallback) | 8001 (mapped) |
+| TCP P2P | Dynamic (OS-assigned, port=0) | 50001 (mapped) |
+| UDP Discovery | 50000 (SO_REUSEADDR shared) | 50000/udp (mapped) |
+| Frontend Dashboard | 5173 (Vite dev) | 3000 → nginx:80 |
+
+---
+
+## 📊 10. Dynamic Port Resolution (Phase 10)
+
+### TCP Port Allocation
+
+| Feature | Before | After |
+|---------|--------|-------|
+| TCP server port | Hardcoded `50001` | `port=0` → OS-assigned |
+| Port discovery | Static config | Extracted via `socket.getsockname()` |
+| HELLO broadcast | `tcp_port: 50001` | `tcp_port: state.tcp_port` (dynamic) |
+| Multi-node conflict | ❌ Crash on same host | ✅ Each node gets unique port |
+
+### API Port Fallback
+
+| Port | Status | Action |
+|------|--------|--------|
+| 8000 | In use (mobsf) | Skip, try 8001 |
+| 8001 | Available | ✅ Bind and serve |
+| 8002-8010 | Reserved fallback | Available if needed |
+
+### UDP Discovery Socket
+
+| Feature | Before | After |
+|---------|--------|-------|
+| Socket creation | `create_datagram_endpoint(local_addr=...)` | Pre-configured `socket.socket()` |
+| SO_REUSEADDR | Set after binding (too late) | Set before binding ✅ |
+| SO_REUSEPORT | Best-effort | Best-effort with try/except |
+| Multi-node sharing | ❌ Second node fails | ✅ Both share UDP port |
+
+---
+
+## 🔄 How to Run
+
+```bash
+cd distristore
+source .venv/bin/activate
+
+# Core benchmark (10 file sizes)
+python -m backend.benchmark.benchmark
+
+# 100MB performance test
+python -m tests.test_phase3_perf
+
+# Security tests
+python -m tests.test_phase2_gcm
+python -m tests.test_phase2_merkle
+
+# Swarming test (starts a server)
+python -m tests.test_phase2_swarm
+
+# Discovery health test
+python -m tests.test_phase2_health
+
+# Docker benchmarks
+docker compose up --build -d
+curl -X POST -F "file=@testfile.bin" -F "password=test" http://localhost:8001/upload
+docker compose down
+```
+
+---
+
 ## 📋 Test Matrix
 
 | Test | What it verifies | Command | Status |
 |------|-----------------|---------|--------|
-| Phase 1 | Node discovery + TCP | `python -m tests.test_phase1` | ✅ |
+| Phase 1 | Node discovery + TCP (dynamic ports) | `python -m tests.test_phase1` | ✅ |
 | Phase 2 | File chunk + encrypt round-trip | `python -m tests.test_phase2` | ✅ |
 | Phase 2 GCM | AES-256-GCM tamper detection | `python -m tests.test_phase2_gcm` | ✅ |
 | Phase 2 Merkle | Merkle proofs + root verification | `python -m tests.test_phase2_merkle` | ✅ |
@@ -211,4 +290,6 @@ The `/download/{hash}` endpoint uses `FileResponse` + `BackgroundTasks` for O(1)
 | Phase 5 | HTTP API endpoints | `python -m tests.test_phase5` | ✅ |
 | Phase 3 Perf | 100MB O(N) performance | `python -m tests.test_phase3_perf` | ✅ |
 | Phase 8 | Memory-safe FileResponse download | `curl` upload → download → sha256sum | ✅ |
+| Phase 9 | Docker build + compose validation | `docker compose up --build` | ✅ |
+| Phase 10 | Dynamic ports + deployment scripts | `./start.sh` | ✅ |
 | Benchmark | 10-size throughput suite | `python -m backend.benchmark.benchmark` | ✅ |

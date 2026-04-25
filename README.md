@@ -2,7 +2,7 @@
 
 > **LAN-Optimized P2P Distributed Hash Table (DHT) Storage Framework**
 
-A modular, trackerless peer-to-peer file storage system featuring AES-256-GCM authenticated encryption, Merkle-verified content addressing, parallel swarmed downloads, O(N) streaming architecture, a real-time React dashboard, and Docker containerization.
+A modular, trackerless peer-to-peer file storage system featuring AES-256-GCM authenticated encryption, Merkle-verified content addressing, parallel swarmed downloads, O(N) streaming architecture, dynamic port allocation, a real-time React dashboard, native deployment scripts, and Docker containerization.
 
 ---
 
@@ -10,11 +10,12 @@ A modular, trackerless peer-to-peer file storage system featuring AES-256-GCM au
 
 - 🔐 **AES-256-GCM** — Authenticated encryption with automatic tamper detection
 - 🌳 **Merkle Manifests** — Content-addressed chunks with per-chunk proof verification
-- ⚡ **100MB in 0.79s** — O(N) streaming pipeline with ProcessPool parallelism
+- ⚡ **100MB in 0.67s** — O(N) streaming pipeline with ProcessPool parallelism
 - 🕸️ **Parallel Swarming** — Download chunks from multiple peers simultaneously
 - 🏥 **Health-Scored Discovery** — Peers broadcast RAM, CPU, disk metrics in HELLO
+- 🔌 **Dynamic Ports** — OS-assigned TCP, auto-fallback API (8000→8010), SO_REUSEADDR UDP
 - 🎨 **Enterprise Dashboard** — Sidebar nav, Recharts graphs, Zustand state, sortable peer table
-- 🧩 **Scalable Architecture** — Atomic UI components, API service layer, URL routing
+- 🐳 **Docker-Ready** — Multi-stage builds, compose orchestration, nginx production serving
 
 ---
 
@@ -22,36 +23,46 @@ A modular, trackerless peer-to-peer file storage system featuring AES-256-GCM au
 
 ### Prerequisites
 - Python 3.11+
-- Node.js 18+ (for frontend)
+- Node.js 22+ (for frontend / Vite 8)
 
-### Backend Setup
+### One-Command Setup (Linux/macOS)
+```bash
+cd distristore
+./setup.sh          # Creates .venv + installs Python & Node deps
+./start.sh          # Starts backend + frontend
+```
+
+### One-Command Setup (Windows)
+```cmd
+cd distristore
+setup.bat           REM Creates .venv + installs Python & Node deps
+start.bat           REM Starts backend + frontend
+```
+
+### Manual Setup
 ```bash
 cd distristore
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# Start a node
+# Start backend
 python -m backend.main
-```
 
-### Frontend Setup
-```bash
-cd frontend
-npm install
-npm run dev
+# In another terminal — start frontend
+cd frontend && npm install && npm run dev
 ```
 
 ### Running Multiple Nodes (for testing)
 ```bash
-# Terminal 1 — Node Alpha
-DS_NAME=node-alpha DS_TCP_PORT=50001 DS_UDP_PORT=50000 \
-  uvicorn backend.main:app --port 8000
+# Terminal 1 — Node Alpha (ports auto-assigned)
+DS_NAME=node-alpha uvicorn backend.main:app --port 8000
 
-# Terminal 2 — Node Beta
-DS_NAME=node-beta DS_TCP_PORT=50003 DS_UDP_PORT=50000 \
-  uvicorn backend.main:app --port 8001
+# Terminal 2 — Node Beta (ports auto-assigned)
+DS_NAME=node-beta uvicorn backend.main:app --port 8001
 ```
+
+> TCP P2P ports are dynamically assigned by the OS. UDP discovery uses `SO_REUSEADDR` so multiple nodes share port 50000.
 
 ---
 
@@ -113,14 +124,16 @@ distristore/
 | **Merkle Manifests** | Content-addressed files with SHA-256 tree root + per-chunk proofs |
 | **O(N) Pipeline** | Streaming Read→Encrypt→Store with `ProcessPoolExecutor` parallelism |
 | **O(1) Downloads** | `FileResponse` streaming — temp file served directly, zero RAM |
+| **Dynamic Ports** | TCP port=0 (OS-assigned), API fallback 8000→8010, SO_REUSEADDR UDP |
 | **Parallel Swarming** | `asyncio.gather()` downloads 5 chunks simultaneously from peers |
 | **Health-Scored Discovery** | UDP HELLO includes `psutil` metrics (RAM, CPU, disk) |
 | **XOR DHT Routing** | Kademlia-style routing for chunk placement |
 | **k-Replication** | Configurable redundancy (default k=3) |
 | **Self-Healing** | Automatic re-replication when peers go offline |
 | **Enterprise Frontend** | Sidebar nav, URL routing, Zustand state, Recharts, lucide-react |
-| **Atomic UI** | Reusable Card, Button, CopyButton, StatCard components |
 | **Copy Hash UX** | One-click copy hash + quick download from file list |
+| **Docker Compose** | Multi-stage builds, health checks, nginx production serving |
+| **Native Scripts** | `setup.sh/bat` + `start.sh/bat` for zero-Docker deployment |
 
 ---
 
@@ -178,11 +191,19 @@ python -m backend.benchmark.benchmark
 
 | Metric | Result |
 |--------|--------|
-| Chunk + Encrypt (400 chunks) | 0.45s |
-| Merge + Decrypt (400 chunks) | 0.35s |
-| **Total end-to-end** | **0.79s** |
-| ProcessPool speedup | 8.40x |
-| O(N) linearity (10→100MB) | 4.6x ratio ✅ |
+| Chunk + Encrypt (400 chunks) | 0.38s |
+| Merge + Decrypt (400 chunks) | 0.29s |
+| **Total end-to-end** | **0.67s** |
+| ProcessPool speedup | 8.52x |
+| O(N) linearity (10→100MB) | 5.9x ratio ✅ |
+
+### Docker vs Local
+
+| Metric | Local | Docker | Overhead |
+|--------|-------|--------|----------|
+| 1MB Upload | ~45ms | 54ms | +20% |
+| 1MB Download | ~30ms | 35ms | +17% |
+| Frontend load | — | 2ms | nginx |
 
 > Full benchmark data: [BENCHMARKS.md](BENCHMARKS.md)
 
@@ -248,7 +269,7 @@ docker compose up --build
 | Service | URL | Port Mapping |
 |---------|-----|--------------|
 | **Dashboard** | http://localhost:3000 | 3000 → nginx:80 |
-| **API** | http://localhost:8000 | 8000 → uvicorn:8000 |
+| **API** | http://localhost:8001 | 8001 → uvicorn:8001 |
 | **TCP P2P** | — | 50001 → 50001 |
 | **UDP Discovery** | — | 50000/udp → 50000/udp |
 
@@ -257,7 +278,7 @@ docker compose up --build
 | File | Purpose |
 |------|---------|
 | `backend/Dockerfile` | Python 3.11-slim + FastAPI + Uvicorn |
-| `frontend/Dockerfile` | Multi-stage: Node 18 build → nginx:alpine |
+| `frontend/Dockerfile` | Multi-stage: Node 22 build → nginx:alpine |
 | `docker-compose.yml` | Orchestrates both services with health checks |
 | `.dockerignore` | Excludes venv, storage, logs from build context |
 
@@ -278,6 +299,17 @@ docker compose down
 # Rebuild single service
 docker compose up --build distristore-backend
 ```
+
+---
+
+## 📜 Deployment Scripts
+
+| Script | Platform | Purpose |
+|--------|----------|---------|
+| `setup.sh` | Linux/macOS | Creates `.venv`, installs Python + Node deps |
+| `setup.bat` | Windows | Creates `.venv`, installs Python + Node deps |
+| `start.sh` | Linux/macOS | Starts backend (background) + frontend |
+| `start.bat` | Windows | Opens backend in new window + frontend |
 
 ---
 
