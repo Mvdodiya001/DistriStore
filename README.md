@@ -10,10 +10,11 @@ A modular, trackerless peer-to-peer file storage system featuring AES-256-GCM au
 
 - 🔐 **AES-256-GCM** — Authenticated encryption with automatic tamper detection
 - 🌳 **Merkle Manifests** — Content-addressed chunks with per-chunk proof verification
-- ⚡ **100MB in 0.78s** — O(N) streaming pipeline with ProcessPool parallelism
+- ⚡ **100MB in 0.79s** — O(N) streaming pipeline with ProcessPool parallelism
 - 🕸️ **Parallel Swarming** — Download chunks from multiple peers simultaneously
 - 🏥 **Health-Scored Discovery** — Peers broadcast RAM, CPU, disk metrics in HELLO
-- 🎨 **Premium Dashboard** — Network topology, chunk map, performance gauge
+- 🎨 **Enterprise Dashboard** — Sidebar nav, Recharts graphs, Zustand state, sortable peer table
+- 🧩 **Scalable Architecture** — Atomic UI components, API service layer, URL routing
 
 ---
 
@@ -60,7 +61,7 @@ DS_NAME=node-beta DS_TCP_PORT=50003 DS_UDP_PORT=50000 \
 distristore/
 ├── backend/
 │   ├── main.py                      # FastAPI entry point + CORS
-│   ├── api/routes.py                # REST endpoints + /manifest + /chunk
+│   ├── api/routes.py                # REST endpoints (FileResponse streaming)
 │   ├── node/
 │   │   ├── node.py                  # Node orchestrator
 │   │   └── state.py                 # Thread-safe state (asyncio locks)
@@ -84,9 +85,17 @@ distristore/
 │   │   └── self_healing.py          # Auto chunk re-replication
 │   ├── storage/local_store.py       # Disk I/O for chunks + manifests
 │   └── benchmark/benchmark.py       # 10-size throughput suite
-├── frontend/                        # React + Vite dashboard
-│   ├── src/App.jsx                  # Dashboard, Topology, Chunk Map, Upload, Download
-│   └── src/index.css                # Premium dark-mode design system
+├── frontend/                        # Enterprise React + Vite dashboard
+│   └── src/
+│       ├── api/client.js            # Singleton Axios + service functions
+│       ├── store/useNetworkStore.js  # Zustand auto-polling (3s) global state
+│       ├── components/
+│       │   ├── ui/                  # Card, Button, CopyButton, StatCard
+│       │   ├── layout/              # Header, Sidebar
+│       │   └── network/             # NetworkTopology, TransferSpeedChart, PeerTable
+│       ├── pages/                   # DashboardPage, UploadPage, DownloadPage, SettingsPage
+│       ├── App.jsx                  # BrowserRouter + layout shell only
+│       └── index.css                # Design system + dark-mode tokens
 ├── tests/                           # Phase verification tests
 ├── config.yaml                      # Node configuration
 ├── PROGRESS.md                      # Full phase-by-phase tracker
@@ -103,13 +112,15 @@ distristore/
 | **AES-256-GCM** | Authenticated encryption — tampered chunks auto-rejected |
 | **Merkle Manifests** | Content-addressed files with SHA-256 tree root + per-chunk proofs |
 | **O(N) Pipeline** | Streaming Read→Encrypt→Store with `ProcessPoolExecutor` parallelism |
+| **O(1) Downloads** | `FileResponse` streaming — temp file served directly, zero RAM |
 | **Parallel Swarming** | `asyncio.gather()` downloads 5 chunks simultaneously from peers |
 | **Health-Scored Discovery** | UDP HELLO includes `psutil` metrics (RAM, CPU, disk) |
 | **XOR DHT Routing** | Kademlia-style routing for chunk placement |
 | **k-Replication** | Configurable redundancy (default k=3) |
 | **Self-Healing** | Automatic re-replication when peers go offline |
+| **Enterprise Frontend** | Sidebar nav, URL routing, Zustand state, Recharts, lucide-react |
+| **Atomic UI** | Reusable Card, Button, CopyButton, StatCard components |
 | **Copy Hash UX** | One-click copy hash + quick download from file list |
-| **React Dashboard** | Network topology SVG, chunk distribution map, performance gauge |
 
 ---
 
@@ -155,23 +166,23 @@ python -m backend.benchmark.benchmark
 
 ## 📊 Benchmark Results
 
-### Core Suite (AES-256-GCM + Merkle)
+### Core Suite (AES-256-GCM + Merkle) — avg 95.2ms
 
 | Size | Chunks | Encrypt | Decrypt | **Total** |
 |------|--------|---------|---------|-----------|
-| 64 KB | 1 | 33ms | 27ms | **61ms** |
-| 1 MB | 4 | 32ms | 32ms | **66ms** |
-| 10 MB | 40 | 75ms | 84ms | **177ms** |
+| 64 KB | 1 | 46ms | 46ms | **94ms** |
+| 1 MB | 4 | 32ms | 35ms | **68ms** |
+| 10 MB | 40 | 71ms | 88ms | **174ms** |
 
 ### 100MB Performance
 
 | Metric | Result |
 |--------|--------|
 | Chunk + Encrypt (400 chunks) | 0.45s |
-| Merge + Decrypt (400 chunks) | 0.33s |
-| **Total end-to-end** | **0.78s** |
-| ProcessPool speedup | 7.83x |
-| O(N) linearity (10→100MB) | 5.1x ratio ✅ |
+| Merge + Decrypt (400 chunks) | 0.35s |
+| **Total end-to-end** | **0.79s** |
+| ProcessPool speedup | 8.40x |
+| O(N) linearity (10→100MB) | 4.6x ratio ✅ |
 
 > Full benchmark data: [BENCHMARKS.md](BENCHMARKS.md)
 
@@ -212,8 +223,8 @@ api:
 | Crypto | PyCryptodome (AES-256-GCM), PBKDF2-HMAC-SHA256 |
 | Parallelism | `ProcessPoolExecutor` (GIL bypass), `asyncio.gather` |
 | Discovery | UDP broadcast, `psutil` health metrics |
-| Frontend | React 19, Vite 8, Axios |
-| Storage | Local filesystem, JSON manifests |
+| Frontend | React 19, Vite 8, React Router, Zustand, Recharts, lucide-react |
+| Storage | Local filesystem, JSON manifests, `FileResponse` streaming |
 
 ---
 

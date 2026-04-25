@@ -1,16 +1,63 @@
-# React + Vite
+# DistriStore Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+> Enterprise-grade React dashboard for the DistriStore P2P DHT storage framework.
 
-Currently, two official plugins are available:
+## Tech Stack
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+| Library | Purpose |
+|---------|---------|
+| React 19 | UI framework |
+| Vite 8 | Build tooling + HMR |
+| React Router | URL-based page routing |
+| Zustand | Global state management (auto-polling) |
+| Recharts | Real-time transfer speed charts |
+| lucide-react | Consistent SVG icon library |
+| Axios | HTTP client (singleton instance) |
+| clsx | Dynamic CSS class composition |
 
-## React Compiler
+## Architecture
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```
+src/
+├── api/
+│   └── client.js           # Centralized Axios instance + service functions
+├── store/
+│   └── useNetworkStore.js  # Zustand store — auto-polls /status every 3s
+├── components/
+│   ├── ui/                 # Atomic: Card, Button, CopyButton, StatCard
+│   ├── layout/             # Header, Sidebar
+│   └── network/            # NetworkTopology, TransferSpeedChart, PeerTable
+├── pages/
+│   ├── DashboardPage.jsx   # Stats, topology, charts, file list
+│   ├── UploadPage.jsx      # Drag & drop + AES-256-GCM encryption
+│   ├── DownloadPage.jsx    # Hash input + decryption download
+│   └── SettingsPage.jsx    # Node info, security, performance specs
+├── App.jsx                 # BrowserRouter + layout shell (no business logic)
+└── index.css               # Design system: dark mode, glassmorphism, animations
+```
 
-## Expanding the ESLint configuration
+## Design Rules
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+1. **Components never call Axios directly** — import from `api/client.js`
+2. **No prop drilling** — Zustand store provides global state
+3. **Atomic UI** — all pages use Card, Button, StatCard components
+4. **URL routing** — `/upload`, `/download?hash=abc`, `/settings`
+
+## Quick Start
+
+```bash
+npm install
+npm run dev      # http://localhost:5173
+```
+
+## Environment
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `VITE_API_URL` | `http://localhost:8001` | Backend API base URL |
+
+## Build
+
+```bash
+npm run build    # Output: dist/
+```
