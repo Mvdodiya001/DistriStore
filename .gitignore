@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.env
+
+# Frontend (React/Vite)
+frontend/node_modules/
+frontend/dist/
+frontend/.eslintcache
+
+# Local Storage & DBs
+.storage/
+*.bin
+*.db
+*.sqlite3
+
+# Logs & Benchmarks (Keep the markdown, ignore raw CSVs if they are massive)
+*.log
+# !benchmark_results.csv  <-- Uncomment if you WANT to track the CSV

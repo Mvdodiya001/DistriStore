@@ -1,0 +1,49 @@
+# DistriStore Configuration
+# Each node should customize node_id and ports as needed.
+
+node:
+  # Unique identifier for this node (hex string, 20 bytes / 40 hex chars)
+  # Leave as "auto" to generate a random ID on startup
+  node_id: "auto"
+
+  # Human-readable name for logging
+  name: "node-alpha"
+
+network:
+  # UDP port for LAN broadcast discovery
+  discovery_port: 50000
+
+  # TCP port for peer-to-peer data transfer
+  tcp_port: 50001
+
+  # Broadcast address for LAN discovery
+  broadcast_address: "255.255.255.255"
+
+  # How often to broadcast presence (seconds)
+  discovery_interval: 5
+
+  # Timeout for considering a peer dead (seconds)
+  peer_timeout: 15
+
+storage:
+  # Directory to store file chunks
+  chunk_dir: ".storage"
+
+  # Size of each chunk in bytes (256 KB)
+  chunk_size: 262144
+
+replication:
+  # Number of copies to maintain across the network
+  factor: 3
+
+api:
+  # FastAPI server host & port
+  host: "0.0.0.0"
+  port: 8888
+
+logging:
+  # Logging level: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  level: "DEBUG"
+
+  # Log to file (in addition to console)
+  file: "distristore.log"
