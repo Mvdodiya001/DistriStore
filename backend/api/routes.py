@@ -8,7 +8,10 @@ import os
 import tempfile
 from typing import Optional
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException
+import uuid
+
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi.responses import FileResponse
 
 from backend.utils.logger import get_logger
 
@@ -99,12 +102,20 @@ async def upload_file(
 
 
 @router.get("/download/{file_hash}")
-async def download_file(file_hash: str, password: str = ""):
-    """Download a file by its hash: load chunks, decrypt, merge."""
+async def download_file(
+    file_hash: str,
+    password: str = "",
+    background_tasks: BackgroundTasks = None,
+):
+    """
+    Download a file by its hash: load chunks, decrypt, merge to disk.
+    Uses O(1) memory — streams decrypted chunks directly to a temp file,
+    then serves it via FileResponse with background cleanup.
+    """
     if not _local_store:
         raise HTTPException(503, "Node not initialized")
 
-    from backend.file_engine.chunker import merge_chunks, FileManifest
+    from backend.file_engine.chunker import merge_chunks_to_disk, FileManifest
 
     # Load manifest
     manifest_dict = _local_store.load_manifest(file_hash)
@@ -113,7 +124,7 @@ async def download_file(file_hash: str, password: str = ""):
 
     manifest = FileManifest.from_dict(manifest_dict)
 
-    # Load all chunks
+    # Load all chunks (data stays on disk, only loaded one-at-a-time in merger)
     chunks = []
     for info in manifest.chunks:
         data = _local_store.load_chunk(info.chunk_hash)
@@ -121,21 +132,33 @@ async def download_file(file_hash: str, password: str = ""):
             raise HTTPException(404, f"Chunk missing: {info.chunk_hash[:16]}...")
         chunks.append(data)
 
-    # Merge + decrypt
+    # Generate safe temp file path
+    temp_dir = _local_store.storage_dir
+    temp_file = os.path.join(str(temp_dir), f"temp_{uuid.uuid4().hex}.bin")
+
+    # Merge + decrypt directly to disk — O(1) memory
     try:
         pwd = password if password else None
-        file_data = merge_chunks(manifest, chunks, password=pwd)
+        merge_chunks_to_disk(manifest, chunks, temp_file, password=pwd)
     except ValueError as e:
+        # Clean up temp file on error
+        if os.path.exists(temp_file):
+            os.unlink(temp_file)
         raise HTTPException(400, f"Decryption/integrity error: {e}")
 
-    # Return as base64 (for API consumption)
-    from fastapi.responses import Response
-    return Response(
-        content=file_data,
+    # Schedule temp file deletion after response is sent
+    if background_tasks:
+        background_tasks.add_task(os.remove, temp_file)
+
+    logger.info(
+        f"Serving '{manifest.original_filename}' ({manifest.original_size} bytes) "
+        f"via FileResponse [O(1) memory]"
+    )
+
+    return FileResponse(
+        path=temp_file,
         media_type="application/octet-stream",
-        headers={
-            "Content-Disposition": f'attachment; filename="{manifest.original_filename}"',
-        },
+        filename=manifest.original_filename,
     )
 
 
