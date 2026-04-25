@@ -47,11 +47,11 @@ async def run_test():
 
     # ── Step 3: Start UDP discovery ────────────────────────────
     print("\n[3/5] Starting UDP discovery...")
-    disc_a = await start_discovery(state_a, tcp_port=50001,
+    disc_a = await start_discovery(state_a,
                                     discovery_port=50000,
                                     broadcast_address="127.255.255.255",
                                     interval=2)
-    disc_b = await start_discovery(state_b, tcp_port=50003,
+    disc_b = await start_discovery(state_b,
                                     discovery_port=50002,
                                     broadcast_address="127.255.255.255",
                                     interval=2)
@@ -63,14 +63,14 @@ async def run_test():
         "type": "HELLO",
         "node_id": state_a.node_id,
         "name": state_a.name,
-        "tcp_port": 50001,
+        "tcp_port": state_a.tcp_port,
         "timestamp": time.time(),
     }).encode()
     hello_b = json.dumps({
         "type": "HELLO",
         "node_id": state_b.node_id,
         "name": state_b.name,
-        "tcp_port": 50003,
+        "tcp_port": state_b.tcp_port,
         "timestamp": time.time(),
     }).encode()
 

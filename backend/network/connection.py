@@ -5,7 +5,6 @@ Async TCP server + client for peer-to-peer communication.
 
 import asyncio
 import json
-import struct
 from typing import Callable, Optional
 
 from backend.node.state import NodeState
@@ -13,9 +12,9 @@ from backend.utils.logger import get_logger
 
 logger = get_logger("network.connection")
 
-# Length-prefix framing: 4-byte big-endian length header + JSON payload
-HEADER_SIZE = 4
-MAX_MSG_SIZE = 10 * 1024 * 1024  # 10 MB max message
+# Message delimiter — newline-separated JSON
+DELIMITER = b"\n"
+BUFFER_SIZE = 65536
 
 
 class PeerConnection:
@@ -28,22 +27,15 @@ class PeerConnection:
         self.addr = writer.get_extra_info("peername")
 
     async def send(self, message: dict) -> None:
-        payload = json.dumps(message).encode()
-        header = struct.pack("!I", len(payload))
-        self.writer.write(header + payload)
+        data = json.dumps(message).encode() + DELIMITER
+        self.writer.write(data)
         await self.writer.drain()
 
     async def receive(self) -> Optional[dict]:
         try:
-            header = await self.reader.readexactly(HEADER_SIZE)
-            length = struct.unpack("!I", header)[0]
-            if length > MAX_MSG_SIZE:
-                logger.warning(f"Message too large: {length} bytes")
-                return None
-            payload = await self.reader.readexactly(length)
-            return json.loads(payload)
-        except (asyncio.IncompleteReadError, ConnectionResetError,
-                json.JSONDecodeError, struct.error, OSError):
+            data = await self.reader.readuntil(DELIMITER)
+            return json.loads(data.strip())
+        except (asyncio.IncompleteReadError, ConnectionResetError, json.JSONDecodeError):
             return None
 
     async def close(self) -> None:
@@ -63,11 +55,13 @@ class ConnectionManager:
         self.connections: dict[str, PeerConnection] = {}
         self._server: Optional[asyncio.Server] = None
 
-    async def start_server(self, host: str = "0.0.0.0", port: int = 50001) -> None:
+    async def start_server(self, host: str = "0.0.0.0", port: int = 0) -> None:
         self._server = await asyncio.start_server(
             self._handle_client, host, port
         )
-        logger.info(f"TCP server listening on {host}:{port}")
+        actual_port = self._server.sockets[0].getsockname()[1]
+        self.state.tcp_port = actual_port
+        logger.info(f"TCP server listening on {host}:{actual_port} (requested {port})")
 
     async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         addr = writer.get_extra_info("peername")

@@ -88,11 +88,28 @@ app.include_router(router)
 
 if __name__ == "__main__":
     import uvicorn
+
     config = get_config()
-    port = int(os.environ.get("DS_API_PORT", config.api.port))
-    uvicorn.run(
-        "backend.main:app",
-        host=config.api.host,
-        port=port,
-        reload=False,
-    )
+    base_port = int(os.environ.get("DS_API_PORT", config.api.port))
+
+    # Try ports in range [base_port, base_port+10] to avoid "Address in use"
+    for port in range(base_port, base_port + 11):
+        try:
+            print(f"\n{'='*60}")
+            print(f"  DistriStore GUI accessible at http://localhost:{port}")
+            print(f"{'='*60}\n")
+            uvicorn.run(
+                "backend.main:app",
+                host=config.api.host,
+                port=port,
+                reload=False,
+            )
+            break  # If uvicorn returns cleanly, don't try next port
+        except OSError as e:
+            if "Address already in use" in str(e) or e.errno == 98:
+                logger.warning(f"Port {port} in use, trying {port + 1}...")
+                continue
+            raise
+    else:
+        logger.error(f"Could not find an open port in range {base_port}-{base_port+10}")
+        sys.exit(1)

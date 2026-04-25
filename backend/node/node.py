@@ -34,13 +34,12 @@ class DistriNode:
         """Boot the node: TCP server + UDP discovery + peer connector."""
         net = self.config.network
 
-        # 1. Start TCP server
+        # 1. Start TCP server (port=0 lets OS assign a free port)
         await self.conn_mgr.start_server("0.0.0.0", net.tcp_port)
 
-        # 2. Start UDP discovery
+        # 2. Start UDP discovery (reads dynamic tcp_port from state)
         self._discovery_protocol = await start_discovery(
             state=self.state,
-            tcp_port=net.tcp_port,
             discovery_port=net.discovery_port,
             broadcast_address=net.broadcast_address,
             interval=net.discovery_interval,
@@ -57,7 +56,7 @@ class DistriNode:
         logger.info(
             f"Node [{self.state.name}] started | "
             f"ID: {self.state.node_id[:12]}... | "
-            f"TCP: {net.tcp_port} | UDP: {net.discovery_port}"
+            f"TCP: {self.state.tcp_port} | UDP: {net.discovery_port}"
         )
 
     async def _peer_connector_loop(self) -> None:

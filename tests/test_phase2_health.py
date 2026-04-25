@@ -53,7 +53,8 @@ def run_test():
     # ── Test 2: HELLO Message Format ───────────────────────────
     print("\n[2/4] Testing HELLO message includes health data...")
     state = NodeState(_generate_node_id(), "test-node")
-    protocol = DiscoveryProtocol(state, tcp_port=50001)
+    state.tcp_port = 50001  # Simulate dynamic port assignment
+    protocol = DiscoveryProtocol(state)
     hello_bytes = protocol._build_hello()
     hello_msg = json.loads(hello_bytes.decode())
 
@@ -76,7 +77,8 @@ def run_test():
         state_a = NodeState(_generate_node_id(), "node-A")
         state_b = NodeState(_generate_node_id(), "node-B")
 
-        disc_a = DiscoveryProtocol(state_a, tcp_port=50001)
+        state_a.tcp_port = 50001
+        disc_a = DiscoveryProtocol(state_a)
 
         # Simulate receiving a HELLO with health data from node B
         hello_b = json.dumps({

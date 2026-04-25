@@ -61,12 +61,11 @@ def compute_health_score() -> dict:
 class DiscoveryProtocol(asyncio.DatagramProtocol):
     """asyncio UDP protocol for peer discovery with health scoring."""
 
-    def __init__(self, state: NodeState, tcp_port: int,
+    def __init__(self, state: NodeState,
                  broadcast_addr: str = "255.255.255.255",
                  discovery_port: int = 50000,
                  interval: int = 5):
         self.state = state
-        self.tcp_port = tcp_port
         self.broadcast_addr = broadcast_addr
         self.discovery_port = discovery_port
         self.interval = interval
@@ -117,13 +116,13 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         logger.warning("Discovery transport closed")
 
     def _build_hello(self) -> bytes:
-        """Build a HELLO message with health score."""
+        """Build a HELLO message with health score and dynamic TCP port."""
         health = compute_health_score()
         return json.dumps({
             "type": "HELLO",
             "node_id": self.state.node_id,
             "name": self.state.name,
-            "tcp_port": self.tcp_port,
+            "tcp_port": getattr(self.state, 'tcp_port', 0),
             "uptime": self.state.uptime,
             "timestamp": time.time(),
             "health": health,
@@ -144,27 +143,29 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
             await asyncio.sleep(self.interval)
 
 
-async def start_discovery(state, tcp_port, discovery_port=50000,
+async def start_discovery(state, discovery_port=50000,
                           broadcast_address="255.255.255.255", interval=5):
     """Start the UDP discovery service. Returns the DiscoveryProtocol."""
     loop = asyncio.get_running_loop()
-    protocol = DiscoveryProtocol(state, tcp_port, broadcast_address, discovery_port, interval)
+    protocol = DiscoveryProtocol(state, broadcast_address, discovery_port, interval)
+
+    # Create a pre-configured socket with SO_REUSEADDR *before* binding
+    # so multiple nodes on the same host can share the discovery port.
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, socket.IPPROTO_UDP)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    if hasattr(socket, "SO_REUSEPORT"):
+        try:
+            sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
+        except OSError:
+            pass
+    sock.bind(("0.0.0.0", discovery_port))
+    sock.setblocking(False)
 
     transport, _ = await loop.create_datagram_endpoint(
         lambda: protocol,
-        local_addr=("0.0.0.0", discovery_port),
-        allow_broadcast=True,
+        sock=sock,
     )
-
-    sock = transport.get_extra_info("socket")
-    if sock:
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        if hasattr(socket, "SO_REUSEPORT"):
-            try:
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEPORT, 1)
-            except OSError:
-                pass
 
     logger.info("UDP Discovery service started")
     return protocol

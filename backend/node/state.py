@@ -40,6 +40,7 @@ class NodeState:
         # Identity
         self.node_id: str = node_id
         self.name: str = name
+        self.tcp_port: int = 0  # Set dynamically by ConnectionManager after OS allocation
         self.start_time: float = time.time()
 
         # Peer registry: node_id -> PeerInfo
