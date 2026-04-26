@@ -18,14 +18,14 @@ echo "=============================================="
 # 1. Start Backend (background)
 echo ""
 echo "[1/2] Starting backend (FastAPI)..."
-python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
+python -m uvicorn backend.main:app --host 0.0.0.0 --port 8888 &
 BACKEND_PID=$!
 echo "  Backend PID: $BACKEND_PID"
 sleep 2
 
 # Verify backend started
 if kill -0 $BACKEND_PID 2>/dev/null; then
-    echo "  ✅ Backend running at http://localhost:8000"
+    echo "  ✅ Backend running at http://localhost:8888"
 else
     echo "  ❌ Backend failed to start"
     exit 1

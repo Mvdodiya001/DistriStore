@@ -2,7 +2,7 @@
 
 > **LAN-Optimized P2P Distributed Hash Table (DHT) Storage Framework**
 
-A modular, trackerless peer-to-peer file storage system featuring AES-256-GCM authenticated encryption, Merkle-verified content addressing, parallel swarmed downloads, O(N) streaming architecture, dynamic port allocation, a real-time React dashboard, native deployment scripts, and Docker containerization.
+A modular, trackerless peer-to-peer file storage system featuring AES-256-GCM authenticated encryption, Merkle-verified content addressing, parallel swarmed downloads, O(N) streaming architecture, dynamic port allocation, a real-time React dashboard, and native deployment scripts.
 
 ---
 
@@ -15,11 +15,13 @@ A modular, trackerless peer-to-peer file storage system featuring AES-256-GCM au
 - 🏥 **Health-Scored Discovery** — Peers broadcast RAM, CPU, disk metrics in HELLO
 - 🔌 **Dynamic Ports** — OS-assigned TCP, auto-fallback API (8000→8010), SO_REUSEADDR UDP
 - 🎨 **Enterprise Dashboard** — Sidebar nav, Recharts graphs, Zustand state, sortable peer table
-- 🐳 **Docker-Ready** — Multi-stage builds, compose orchestration, nginx production serving
+- 🛠️ **Native Runtime Focus** — Optimized for direct local execution with setup/start scripts
 
 ---
 
 ## 🚀 Quick Start
+
+> **Note:** Docker is **not supported for now**. Please use the native setup scripts or manual local setup.
 
 ### Prerequisites
 - Python 3.11+
@@ -132,8 +134,7 @@ distristore/
 | **Self-Healing** | Automatic re-replication when peers go offline |
 | **Enterprise Frontend** | Sidebar nav, URL routing, Zustand state, Recharts, lucide-react |
 | **Copy Hash UX** | One-click copy hash + quick download from file list |
-| **Docker Compose** | Multi-stage builds, health checks, nginx production serving |
-| **Native Scripts** | `setup.sh/bat` + `start.sh/bat` for zero-Docker deployment |
+| **Native Scripts** | `setup.sh/bat` + `start.sh/bat` for local deployment |
 
 ---
 
@@ -197,13 +198,9 @@ python -m backend.benchmark.benchmark
 | ProcessPool speedup | 8.52x |
 | O(N) linearity (10→100MB) | 5.9x ratio ✅ |
 
-### Docker vs Local
+### Runtime Note
 
-| Metric | Local | Docker | Overhead |
-|--------|-------|--------|----------|
-| 1MB Upload | ~45ms | 54ms | +20% |
-| 1MB Download | ~30ms | 35ms | +17% |
-| Frontend load | — | 2ms | nginx |
+Current benchmark figures are based on native local execution.
 
 > Full benchmark data: [BENCHMARKS.md](BENCHMARKS.md)
 
@@ -246,7 +243,7 @@ api:
 | Discovery | UDP broadcast, `psutil` health metrics |
 | Frontend | React 19, Vite 8, React Router, Zustand, Recharts, lucide-react |
 | Storage | Local filesystem, JSON manifests, `FileResponse` streaming |
-| DevOps | Docker, Docker Compose, nginx, multi-stage builds |
+| DevOps | Native setup/start scripts (`setup.sh/.bat`, `start.sh/.bat`) |
 
 ---
 
@@ -259,46 +256,16 @@ api:
 
 ---
 
-## 🐳 Docker
+## 🐳 Docker Status
 
-### Quick Start
-```bash
-docker compose up --build
-```
+Docker artifacts may still exist in the repository, but they are currently not part of the supported workflow.
+Use native local execution for development and testing.
 
-| Service | URL | Port Mapping |
-|---------|-----|--------------|
-| **Dashboard** | http://localhost:3000 | 3000 → nginx:80 |
-| **API** | http://localhost:8001 | 8001 → uvicorn:8001 |
-| **TCP P2P** | — | 50001 → 50001 |
-| **UDP Discovery** | — | 50000/udp → 50000/udp |
+### Why Docker support is removed for now
 
-### Docker Files
-
-| File | Purpose |
-|------|---------|
-| `backend/Dockerfile` | Python 3.11-slim + FastAPI + Uvicorn |
-| `frontend/Dockerfile` | Multi-stage: Node 22 build → nginx:alpine |
-| `docker-compose.yml` | Orchestrates both services with health checks |
-| `.dockerignore` | Excludes venv, storage, logs from build context |
-
-### Commands
-```bash
-# Build and start
-docker compose up --build
-
-# Run in background
-docker compose up -d
-
-# View logs
-docker compose logs -f
-
-# Stop
-docker compose down
-
-# Rebuild single service
-docker compose up --build distristore-backend
-```
+1. The active development and test workflow is built around native local execution (`setup.sh/.bat`, `start.sh/.bat`).
+2. Current code paths and runtime behavior are validated in local runs, not maintained in Docker-first flows.
+3. Keeping Docker instructions while they are not actively used creates confusion and outdated setup expectations.
 
 ---
 
