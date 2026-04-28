@@ -84,11 +84,24 @@ class ConnectionManager:
             self.connections[conn.peer_id] = conn
             logger.info(f"Connected to peer {conn.peer_id[:12]}... ({addr[0]})")
 
-            # Send our handshake back
+            # Register peer from TCP handshake (important when UDP is blocked)
+            from backend.node.state import PeerInfo
+            peer = PeerInfo(
+                node_id=conn.peer_id,
+                ip=addr[0],
+                tcp_port=msg.get("tcp_port", 0),
+                name=msg.get("name", "unknown"),
+                api_port=msg.get("api_port", 8888),
+            )
+            asyncio.ensure_future(self.state.add_peer(peer))
+
+            # Send our handshake back (include api_port + tcp_port)
             await conn.send({
                 "type": "HANDSHAKE_ACK",
                 "node_id": self.state.node_id,
                 "name": self.state.name,
+                "tcp_port": self.state.tcp_port,
+                "api_port": getattr(self.state, 'api_port', 8888),
             })
 
             # Message loop
@@ -111,11 +124,13 @@ class ConnectionManager:
             reader, writer = await asyncio.open_connection(ip, port, limit=STREAM_LIMIT)
             conn = PeerConnection(reader, writer)
 
-            # Send handshake
+            # Send handshake (include tcp_port + api_port for peer registration)
             await conn.send({
                 "type": "HANDSHAKE",
                 "node_id": self.state.node_id,
                 "name": self.state.name,
+                "tcp_port": self.state.tcp_port,
+                "api_port": getattr(self.state, 'api_port', 8888),
             })
 
             # Wait for ACK
@@ -128,6 +143,18 @@ class ConnectionManager:
             conn.peer_id = ack.get("node_id", "")
             self.connections[conn.peer_id] = conn
             logger.info(f"Connected to {ip}:{port} (peer {conn.peer_id[:12]}...)")
+
+            # Register remote peer from ACK (important when UDP is blocked)
+            from backend.node.state import PeerInfo
+            peer = PeerInfo(
+                node_id=conn.peer_id,
+                ip=ip,
+                tcp_port=ack.get("tcp_port", port),
+                name=ack.get("name", "unknown"),
+                api_port=ack.get("api_port", 8888),
+            )
+            asyncio.ensure_future(self.state.add_peer(peer))
+
             return conn
 
         except (ConnectionRefusedError, OSError) as e:

@@ -77,18 +77,35 @@ export async function uploadFile(file, password = '') {
 
 export async function downloadFile(fileHash, password = '') {
   const params = password ? { password } : {}
-  const response = await api.get(`/download/${fileHash}`, {
-    params,
-    responseType: 'blob',
-    timeout: 120000,
-  })
+  try {
+    const response = await api.get(`/download/${fileHash}`, {
+      params,
+      responseType: 'blob',
+      timeout: 120000,
+    })
 
-  // Extract filename from Content-Disposition header
-  const cd = response.headers['content-disposition'] || ''
-  const match = cd.match(/filename="?([^"]+)"?/)
-  const filename = match ? match[1] : 'download.bin'
+    // Extract filename from Content-Disposition header
+    const cd = response.headers['content-disposition'] || ''
+    const match = cd.match(/filename="?([^"]+)"?/)
+    const filename = match ? match[1] : 'download.bin'
 
-  return { blob: response.data, filename, latency: response.latency }
+    return { blob: response.data, filename, latency: response.latency }
+  } catch (err) {
+    // Axios returns error responses as blobs when responseType is 'blob'
+    // We need to read the blob to extract the actual error message
+    if (err.response?.data instanceof Blob) {
+      try {
+        const text = await err.response.data.text()
+        const json = JSON.parse(text)
+        throw new Error(json.detail || json.message || text)
+      } catch (parseErr) {
+        if (parseErr.message && !parseErr.message.includes('JSON')) {
+          throw parseErr // Re-throw our parsed error
+        }
+      }
+    }
+    throw err // Fallback to original error
+  }
 }
 
 // ── Utility: trigger browser download from blob ───────────────

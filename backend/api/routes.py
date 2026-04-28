@@ -182,16 +182,29 @@ async def download_file(
         chunks.append(data)
 
     # ── Step 3: Merge + decrypt to disk ────────────────────────────
+    # Check if file is encrypted and password is needed
+    is_encrypted = any(info.encrypted for info in manifest.chunks)
+    pwd = password if password else None
+
+    if is_encrypted and not pwd:
+        raise HTTPException(
+            400,
+            "This file is encrypted. Please provide the decryption password."
+        )
+
     temp_dir = _local_store.storage_dir
     temp_file = os.path.join(str(temp_dir), f"temp_{uuid.uuid4().hex}.bin")
 
     try:
-        pwd = password if password else None
         merge_chunks_to_disk(manifest, chunks, temp_file, password=pwd)
     except ValueError as e:
         if os.path.exists(temp_file):
             os.unlink(temp_file)
-        raise HTTPException(400, f"Decryption/integrity error: {e}")
+        error_msg = str(e)
+        if "integrity check failed" in error_msg.lower():
+            if is_encrypted:
+                error_msg += " (Wrong password? This file is encrypted.)"
+        raise HTTPException(400, f"Decryption/integrity error: {error_msg}")
 
     # Schedule temp file deletion after response is sent
     if background_tasks:
