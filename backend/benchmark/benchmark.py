@@ -56,8 +56,8 @@ def run_benchmark():
     password = "benchmark-password"
 
     print(f"\nRunning {len(TEST_SIZES)} tests...\n")
-    print(f"{'Size':>10} │ {'Chunk':>6} │ {'Encrypt':>10} │ {'Store':>10} │ {'Load':>10} │ {'Decrypt':>10} │ {'Total':>10} │ {'Status'}")
-    print("─" * 90)
+    print(f"{'Size':>10} | {'Chunk':>6} | {'Encrypt':>10} | {'Store':>10} | {'Load':>10} | {'Decrypt':>10} | {'Total':>10} | {'Status'}")
+    print("-" * 90)
 
     for i, size in enumerate(TEST_SIZES):
         test_file = os.path.join(tmp_dir, f"test_{i}.bin")
@@ -108,10 +108,10 @@ def run_benchmark():
                 "integrity": "PASS" if ok else "FAIL",
             })
 
-            print(f"{format_bytes(size):>10} │ {len(chunks):>6} │ {t_chunk*1000:>8.1f}ms │ {t_store*1000:>8.1f}ms │ {t_load*1000:>8.1f}ms │ {t_merge*1000:>8.1f}ms │ {total*1000:>8.1f}ms │ {status}")
+            print(f"{format_bytes(size):>10} | {len(chunks):>6} | {t_chunk*1000:>8.1f}ms | {t_store*1000:>8.1f}ms | {t_load*1000:>8.1f}ms | {t_merge*1000:>8.1f}ms | {total*1000:>8.1f}ms | {status}")
 
         except Exception as e:
-            print(f"{format_bytes(size):>10} │ ERROR: {e}")
+            print(f"{format_bytes(size):>10} | ERROR: {e}")
             results.append({
                 "file_size_bytes": size,
                 "file_size_human": format_bytes(size),
@@ -142,7 +142,7 @@ def run_benchmark():
     if results:
         avg_total = sum(r.get("total_ms", 0) for r in results if "total_ms" in r) / len([r for r in results if "total_ms" in r])
         all_pass = all(r.get("integrity") == "PASS" for r in results if "integrity" in r)
-        print(f"\n{'─' * 70}")
+        print(f"\n{'-' * 70}")
         print(f"  Average turnaround: {avg_total:.1f}ms")
         print(f"  All integrity checks: {'✅ PASSED' if all_pass else '❌ FAILED'}")
 

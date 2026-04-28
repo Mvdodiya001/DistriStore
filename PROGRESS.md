@@ -259,6 +259,7 @@ Phase 11 (LAN Access)     ██████████████████
 | Root permissions blocking upload | `.storage/` directory | Fixed Docker-created root ownership (`chown`) | ✅ |
 | Downloads fail silently (Frontend) | `frontend/src/api/client.js` | Delayed `URL.revokeObjectURL` by 100ms | ✅ |
 | Missing filename on download | `backend/main.py` | Added `expose_headers=["*"]` to `CORSMiddleware` | ✅ |
+| Uvicorn crash on Windows (UnicodeEncodeError) | `backend/utils/logger.py` | Replaced unicode box-drawing characters with ASCII equivalents | ✅ |
 
 **Verification:** Confirmed cross-LAN upload and download from friend's machine. ✅
 

@@ -33,7 +33,7 @@ def setup_logging(level: str = "DEBUG", log_file: str = None) -> None:
 
     # Console handler — colored output
     console_fmt = logging.Formatter(
-        fmt="%(asctime)s │ %(levelname)-8s │ %(name)-28s │ %(message)s",
+        fmt="%(asctime)s | %(levelname)-8s | %(name)-28s | %(message)s",
         datefmt="%H:%M:%S",
     )
     console_handler = logging.StreamHandler(sys.stdout)
@@ -46,10 +46,10 @@ def setup_logging(level: str = "DEBUG", log_file: str = None) -> None:
         file_path = Path(log_file)
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_fmt = logging.Formatter(
-            fmt="%(asctime)s │ %(levelname)-8s │ %(name)-28s │ %(message)s",
+            fmt="%(asctime)s | %(levelname)-8s | %(name)-28s | %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
-        file_handler = logging.FileHandler(str(file_path))
+        file_handler = logging.FileHandler(str(file_path), encoding="utf-8")
         file_handler.setLevel(log_level)
         file_handler.setFormatter(file_fmt)
         logger.addHandler(file_handler)
