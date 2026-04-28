@@ -20,9 +20,10 @@ Phase 3O (Optimization)   ██████████████████
 Phase 8 (Enterprise UI)   ████████████████████ 100% ✅
 Phase 9 (Docker)          ████████████████████ 100% ✅
 Phase 10 (Dynamic Ports)  ████████████████████ 100% ✅
+Phase 11 (LAN Access)     ████████████████████ 100% ✅
 ```
 
-**Current Position: All 12 phases complete. Production-ready with Docker + native deployment.**
+**Current Position: All 13 phases complete. Production-ready with LAN/Network support.**
 
 ---
 
@@ -246,6 +247,20 @@ Phase 10 (Dynamic Ports)  ██████████████████
 | Frontend load | — | 2ms | nginx |
 
 **Verification:** All 12 test suites pass ✅
+
+---
+
+## 🔷 Phase 11 — LAN Accessibility & Network Debugging
+
+| Bug | Component | Fix Applied | Status |
+|-----|-----------|-------------|--------|
+| Cannot connect from other laptop | `frontend/src/api/client.js` | Dynamic `API_BASE` using `window.location.hostname` | ✅ |
+| Vite dev server blocking LAN | `start.sh` & `start.bat` | Added `--host` flag to `npm run dev` | ✅ |
+| Root permissions blocking upload | `.storage/` directory | Fixed Docker-created root ownership (`chown`) | ✅ |
+| Downloads fail silently (Frontend) | `frontend/src/api/client.js` | Delayed `URL.revokeObjectURL` by 100ms | ✅ |
+| Missing filename on download | `backend/main.py` | Added `expose_headers=["*"]` to `CORSMiddleware` | ✅ |
+
+**Verification:** Confirmed cross-LAN upload and download from friend's machine. ✅
 
 ---
 

@@ -24,4 +24,4 @@ echo   Dashboard will be at http://localhost:5173
 echo.
 cd frontend
 call ..\\.venv\Scripts\activate
-npm run dev
+npm run dev -- --host

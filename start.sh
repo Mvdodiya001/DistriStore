@@ -37,7 +37,7 @@ echo "[2/2] Starting frontend (Vite dev server)..."
 echo "  Dashboard will be at http://localhost:5173"
 echo ""
 cd frontend
-npm run dev
+npm run dev -- --host
 
 # Cleanup backend on exit
 kill $BACKEND_PID 2>/dev/null
