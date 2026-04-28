@@ -15,17 +15,17 @@ echo "=============================================="
 echo "  DistriStore — Starting Services"
 echo "=============================================="
 
-# 1. Start Backend (background)
+# 1. Start Backend (background) — uses config.yaml port with fallback
 echo ""
 echo "[1/2] Starting backend (FastAPI)..."
-python -m uvicorn backend.main:app --host 0.0.0.0 --port 8888 &
+python -m backend.main &
 BACKEND_PID=$!
 echo "  Backend PID: $BACKEND_PID"
 sleep 2
 
 # Verify backend started
 if kill -0 $BACKEND_PID 2>/dev/null; then
-    echo "  ✅ Backend running at http://localhost:8888"
+    echo "  ✅ Backend running (port from config.yaml)"
 else
     echo "  ❌ Backend failed to start"
     exit 1

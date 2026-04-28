@@ -15,6 +15,7 @@ logger = get_logger("network.connection")
 # Message delimiter — newline-separated JSON
 DELIMITER = b"\n"
 BUFFER_SIZE = 65536
+STREAM_LIMIT = 1024 * 1024  # 1 MB — prevents LimitOverrunError on large messages
 
 
 class PeerConnection:
@@ -25,6 +26,8 @@ class PeerConnection:
         self.writer = writer
         self.peer_id = peer_id
         self.addr = writer.get_extra_info("peername")
+        # Increase the internal buffer limit to handle large messages (1 MB)
+        self.reader._limit = 1024 * 1024
 
     async def send(self, message: dict) -> None:
         data = json.dumps(message).encode() + DELIMITER
@@ -35,7 +38,8 @@ class PeerConnection:
         try:
             data = await self.reader.readuntil(DELIMITER)
             return json.loads(data.strip())
-        except (asyncio.IncompleteReadError, ConnectionResetError, json.JSONDecodeError):
+        except (asyncio.IncompleteReadError, asyncio.LimitOverrunError,
+                ConnectionResetError, json.JSONDecodeError):
             return None
 
     async def close(self) -> None:
@@ -57,7 +61,7 @@ class ConnectionManager:
 
     async def start_server(self, host: str = "0.0.0.0", port: int = 0) -> None:
         self._server = await asyncio.start_server(
-            self._handle_client, host, port
+            self._handle_client, host, port, limit=STREAM_LIMIT
         )
         actual_port = self._server.sockets[0].getsockname()[1]
         self.state.tcp_port = actual_port
@@ -104,7 +108,7 @@ class ConnectionManager:
     async def connect_to_peer(self, ip: str, port: int) -> Optional[PeerConnection]:
         """Initiate an outbound TCP connection to a peer."""
         try:
-            reader, writer = await asyncio.open_connection(ip, port)
+            reader, writer = await asyncio.open_connection(ip, port, limit=STREAM_LIMIT)
             conn = PeerConnection(reader, writer)
 
             # Send handshake

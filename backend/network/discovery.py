@@ -9,6 +9,7 @@ Peers are scored on discovery, enabling smarter chunk placement decisions.
 
 import asyncio
 import json
+import os
 import socket
 import time
 from typing import Optional
@@ -39,8 +40,7 @@ def compute_health_score() -> dict:
     cpu_percent = psutil.cpu_percent(interval=0)
 
     # Disk free space (cross-platform root path)
-    import os as _os
-    disk = psutil.disk_usage(_os.path.abspath(_os.sep))
+    disk = psutil.disk_usage(os.path.abspath(os.sep))
     free_disk_gb = disk.free / (1024 ** 3)
 
     # Health Score formula:
