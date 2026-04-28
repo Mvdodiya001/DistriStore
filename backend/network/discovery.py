@@ -38,8 +38,9 @@ def compute_health_score() -> dict:
     # CPU usage (lower is better, we invert)
     cpu_percent = psutil.cpu_percent(interval=0)
 
-    # Disk free space
-    disk = psutil.disk_usage("/")
+    # Disk free space (cross-platform root path)
+    import os as _os
+    disk = psutil.disk_usage(_os.path.abspath(_os.sep))
     free_disk_gb = disk.free / (1024 ** 3)
 
     # Health Score formula:
@@ -99,12 +100,12 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
             name=msg.get("name", "unknown"),
             free_space=free_space_bytes,
             uptime=msg.get("uptime", 0),
+            health_score=health.get("health_score", 0),
         )
 
-        health_score = health.get("health_score", 0)
         logger.debug(
             f"HELLO from {peer.name} ({peer_id[:12]}...) at {peer.ip} "
-            f"[health={health_score}, RAM={health.get('free_ram_mb', 0)}MB, "
+            f"[health={peer.health_score}, RAM={health.get('free_ram_mb', 0)}MB, "
             f"CPU={health.get('cpu_freq_ghz', 0)}GHz]"
         )
         asyncio.ensure_future(self.state.add_peer(peer))

@@ -24,6 +24,7 @@ class PeerInfo:
     free_space: int = 0       # bytes available (reported by peer)
     uptime: float = 0.0       # seconds since peer boot
     latency: float = 0.0      # round-trip ms to this peer
+    health_score: float = 0.0 # computed health score from HELLO
 
     def is_alive(self, timeout: int = 15) -> bool:
         """Check if peer has been seen within the timeout window."""
@@ -71,6 +72,10 @@ class NodeState:
                     existing.free_space = peer.free_space
                 if peer.uptime:
                     existing.uptime = peer.uptime
+                if peer.health_score:
+                    existing.health_score = peer.health_score
+                if peer.name and peer.name != "unknown":
+                    existing.name = peer.name
                 logger.debug(f"Updated peer {peer.node_id[:12]}... ({peer.ip})")
             else:
                 peer.last_seen = time.time()
@@ -162,7 +167,18 @@ class NodeState:
             "peer_count": len(peers),
             "chunk_count": len(chunks),
             "peers": {
-                nid: {"ip": p.ip, "tcp_port": p.tcp_port, "last_seen": p.last_seen}
+                nid: {
+                    "ip": p.ip,
+                    "tcp_port": p.tcp_port,
+                    "last_seen": p.last_seen,
+                    # Frontend-compatible aliases
+                    "name": p.name,
+                    "host": p.ip,
+                    "port": p.tcp_port,
+                    "health_score": p.health_score,
+                    "free_space": p.free_space,
+                    "uptime": p.uptime,
+                }
                 for nid, p in peers.items()
             },
         }

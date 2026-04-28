@@ -11,8 +11,8 @@ echo ==============================================
 REM 1. Start Backend (new window)
 echo.
 echo [1/2] Starting backend (FastAPI) in new window...
-start cmd /k "call .venv\Scripts\activate && python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000"
-echo   Backend starting at http://localhost:8000
+start cmd /k "call .venv\Scripts\activate && python -m backend.main"
+echo   Backend starting (port from config.yaml)
 
 REM Wait for backend to initialize
 timeout /t 3 /nobreak > nul
