@@ -267,7 +267,7 @@ Phase 11 (LAN Access)     ██████████████████
 
 ## 🔷 Phase 12 — Cross-Node Downloads & Platform Independence
 
-### Cross-Node Download (Core Feature)
+### 12a. Cross-Node Download (Core Feature)
 
 | Change | Component | What it does | Status |
 |--------|-----------|-------------|--------|
@@ -275,9 +275,23 @@ Phase 11 (LAN Access)     ██████████████████
 | Peer API port storage | `backend/node/state.py` | `PeerInfo.api_port` field + status response | ✅ |
 | Remote manifest fetch | `backend/api/routes.py` `/download` | If manifest not local, queries peers via HTTP | ✅ |
 | Remote chunk fetch | `backend/api/routes.py` `/download` | If chunk not local, fetches from peers + caches | ✅ |
-| Peer file listing | `backend/api/routes.py` `/files` | Shows files from peers (with recursion guard) | ✅ |
+| Peer file listing | `backend/api/routes.py` `/files` | Shows files from peers (with `local_only` recursion guard) | ✅ |
 | `os.statvfs` → `shutil.disk_usage` | `backend/storage/local_store.py` | Cross-platform free space check | ✅ |
-| TCP LimitOverrunError | `backend/network/connection.py` | 1MB stream limit + catch `LimitOverrunError` | ✅ |
+| TCP LimitOverrunError | `backend/network/connection.py` | 1MB `STREAM_LIMIT` + catch `LimitOverrunError` | ✅ |
+
+### 12b. TCP Peer Registration (Windows Firewall Fix)
+
+| Bug | Root Cause | Fix | Status |
+|-----|-----------|-----|--------|
+| Linux dashboard shows 0 peers | Windows Firewall blocks UDP port 50000, so HELLO broadcasts never arrive | Register peers from TCP handshakes (`_handle_client` + `connect_to_peer`) | ✅ |
+| Peer data missing api_port/tcp_port | TCP HANDSHAKE only sent `node_id` + `name` | Extended HANDSHAKE and HANDSHAKE_ACK to include `tcp_port` + `api_port` | ✅ |
+
+### 12c. Encrypted File Download Error Handling
+
+| Bug | Root Cause | Fix | Status |
+|-----|-----------|-----|--------|
+| Download returns generic "status 400" | Encrypted file downloaded without password → integrity mismatch | Backend now checks `chunk.encrypted` flag and returns clear message: "This file is encrypted. Please provide the decryption password." | ✅ |
+| Frontend shows "Request failed with status code 400" | Axios wraps blob responses; JSON `detail` field not extracted | `downloadFile()` now parses blob error responses to extract server error messages | ✅ |
 
 ### Download Flow (Before vs After)
 
@@ -286,8 +300,16 @@ Phase 11 (LAN Access)     ██████████████████
 | 1. Manifest | Local only → 404 | Local → Peer HTTP fallback |
 | 2. Chunks | Local only → 404 | Local → Peer HTTP fallback + local cache |
 | 3. File list | Local only | Local + peer merge (deduplicated) |
+| 4. Peer discovery | UDP HELLO only | UDP HELLO + TCP handshake fallback |
+| 5. Encrypted files | Cryptic integrity error | Clear "file is encrypted" message |
 
-**Verification:** Upload on Node A, paste hash on Node B, download succeeds. ✅
+### Verification
+
+- ✅ Upload on Node A (Linux), download on Node B (Windows) via file hash
+- ✅ Windows peer shows in Linux dashboard via TCP handshake registration
+- ✅ Chunks fetched cross-node via HTTP: `GET /chunk/{hash}` (confirmed in logs)
+- ✅ Encrypted file download shows clear error when password not provided
+- ✅ Unencrypted file download works end-to-end (HTTP 200, correct file size)
 
 ---
 

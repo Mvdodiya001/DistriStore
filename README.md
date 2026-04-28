@@ -2,7 +2,7 @@
 
 > **LAN-Optimized P2P Distributed Hash Table (DHT) Storage Framework**
 
-A modular, trackerless peer-to-peer file storage system featuring AES-256-GCM authenticated encryption, Merkle-verified content addressing, parallel swarmed downloads, O(N) streaming architecture, dynamic port allocation, a real-time React dashboard, and native deployment scripts.
+A modular, trackerless peer-to-peer file storage system featuring AES-256-GCM authenticated encryption, Merkle-verified content addressing, **cross-node downloads**, parallel swarmed downloads, O(N) streaming architecture, dynamic port allocation, a real-time React dashboard, and native deployment scripts for **Windows + Linux**.
 
 ---
 
@@ -12,10 +12,11 @@ A modular, trackerless peer-to-peer file storage system featuring AES-256-GCM au
 - 🌳 **Merkle Manifests** — Content-addressed chunks with per-chunk proof verification
 - ⚡ **100MB in 0.67s** — O(N) streaming pipeline with ProcessPool parallelism
 - 🕸️ **Parallel Swarming** — Download chunks from multiple peers simultaneously
-- 🏥 **Health-Scored Discovery** — Peers broadcast RAM, CPU, disk metrics in HELLO
-- 🔌 **Dynamic Ports** — OS-assigned TCP, auto-fallback API (8000→8010), SO_REUSEADDR UDP
+- 📥 **Cross-Node Downloads** — Upload on one node, download on any peer via hash
+- 🏥 **Health-Scored Discovery** — UDP HELLO + TCP handshake fallback (works through firewalls)
+- 🔌 **Dynamic Ports** — OS-assigned TCP, auto-fallback API (8888→8898), SO_REUSEADDR UDP
 - 🎨 **Enterprise Dashboard** — Sidebar nav, Recharts graphs, Zustand state, sortable peer table
-- 🛠️ **Native Runtime Focus** — Optimized for direct local execution with setup/start scripts
+- 🖥️ **Cross-Platform** — Fully tested on Windows + Linux with platform-independent code
 
 ---
 
@@ -57,14 +58,15 @@ cd frontend && npm install && npm run dev
 
 ### Running Multiple Nodes (for testing)
 ```bash
-# Terminal 1 — Node Alpha (ports auto-assigned)
-DS_NAME=node-alpha uvicorn backend.main:app --port 8000
+# Terminal 1 — Node Alpha
+DS_NAME=node-alpha DS_API_PORT=8888 python -m backend.main
 
-# Terminal 2 — Node Beta (ports auto-assigned)
-DS_NAME=node-beta uvicorn backend.main:app --port 8001
+# Terminal 2 — Node Beta (different API port)
+DS_NAME=node-beta DS_API_PORT=8889 DS_TCP_PORT=50002 python -m backend.main
 ```
 
 > TCP P2P ports are dynamically assigned by the OS. UDP discovery uses `SO_REUSEADDR` so multiple nodes share port 50000.
+> Cross-node downloads work automatically — upload on any node, download on any other using the file hash.
 
 ---
 
@@ -124,17 +126,19 @@ distristore/
 |---------|-------------|
 | **AES-256-GCM** | Authenticated encryption — tampered chunks auto-rejected |
 | **Merkle Manifests** | Content-addressed files with SHA-256 tree root + per-chunk proofs |
+| **Cross-Node Downloads** | Upload on Node A, download on Node B — manifest + chunks fetched via peer HTTP API and cached locally |
 | **O(N) Pipeline** | Streaming Read→Encrypt→Store with `ProcessPoolExecutor` parallelism |
 | **O(1) Downloads** | `FileResponse` streaming — temp file served directly, zero RAM |
-| **Dynamic Ports** | TCP port=0 (OS-assigned), API fallback 8000→8010, SO_REUSEADDR UDP |
+| **Dynamic Ports** | TCP port=0 (OS-assigned), API fallback 8888→8898, SO_REUSEADDR UDP |
 | **Parallel Swarming** | `asyncio.gather()` downloads 5 chunks simultaneously from peers |
-| **Health-Scored Discovery** | UDP HELLO includes `psutil` metrics (RAM, CPU, disk) |
+| **Dual Discovery** | UDP HELLO broadcasts + TCP handshake peer registration (works through Windows Firewall) |
+| **Health-Scored Peers** | `psutil` metrics (RAM, CPU, disk) in HELLO + `api_port` for cross-node HTTP |
 | **XOR DHT Routing** | Kademlia-style routing for chunk placement |
 | **k-Replication** | Configurable redundancy (default k=3) |
 | **Self-Healing** | Automatic re-replication when peers go offline |
 | **Enterprise Frontend** | Sidebar nav, URL routing, Zustand state, Recharts, lucide-react |
 | **Copy Hash UX** | One-click copy hash + quick download from file list |
-| **Native Scripts** | `setup.sh/bat` + `start.sh/bat` for local deployment |
+| **Cross-Platform** | Windows + Linux/macOS — all code uses platform-independent APIs |
 
 ---
 
@@ -142,12 +146,12 @@ distristore/
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/status` | Node status, peers, uptime, storage |
-| `POST` | `/upload` | Upload + chunk + encrypt + Merkle manifest |
-| `GET` | `/download/{hash}` | Download + decrypt + merge + integrity check |
-| `GET` | `/files` | List all stored files with Merkle roots |
-| `GET` | `/manifest/{hash}` | Fetch file manifest (for swarmed downloads) |
-| `GET` | `/chunk/{hash}` | Fetch raw chunk bytes by hash |
+| `GET` | `/status` | Node status, peers (with `api_port`), uptime, storage |
+| `POST` | `/upload` | Upload + chunk + encrypt + Merkle manifest + replicate |
+| `GET` | `/download/{hash}?password=` | Download + decrypt + merge — fetches from peers if not local |
+| `GET` | `/files?local_only=false` | List files (local + peer merged, deduplicated) |
+| `GET` | `/manifest/{hash}` | Fetch file manifest (used by cross-node download) |
+| `GET` | `/chunk/{hash}` | Fetch raw chunk bytes (used by cross-node download) |
 
 ---
 
@@ -214,22 +218,24 @@ node:
   name: "node-alpha"
 
 network:
-  discovery_port: 50000
-  tcp_port: 50001
-  discovery_interval: 5
-  peer_timeout: 15
+  discovery_port: 50000      # UDP broadcast port
+  tcp_port: 50001            # TCP peer-to-peer port
+  discovery_interval: 5      # HELLO broadcast interval (seconds)
+  peer_timeout: 15           # Peer considered dead after (seconds)
 
 storage:
   chunk_dir: ".storage"
-  chunk_size: 262144         # 256 KB
+  chunk_size: 262144         # 256 KB per chunk
 
 replication:
-  factor: 3
+  factor: 3                  # k-copy replication
 
 api:
   host: "0.0.0.0"
-  port: 8000
+  port: 8888                 # HTTP API port (auto-fallback to 8898)
 ```
+
+> **Environment overrides:** `DS_NAME`, `DS_API_PORT`, `DS_TCP_PORT`, `DS_UDP_PORT`
 
 ---
 
@@ -240,9 +246,11 @@ api:
 | Backend | Python 3.11, FastAPI, asyncio, uvicorn |
 | Crypto | PyCryptodome (AES-256-GCM), PBKDF2-HMAC-SHA256 |
 | Parallelism | `ProcessPoolExecutor` (GIL bypass), `asyncio.gather` |
-| Discovery | UDP broadcast, `psutil` health metrics |
+| Discovery | UDP broadcast + TCP handshake fallback, `psutil` health metrics |
+| Cross-Node | `httpx` async client for peer manifest/chunk fetching |
 | Frontend | React 19, Vite 8, React Router, Zustand, Recharts, lucide-react |
 | Storage | Local filesystem, JSON manifests, `FileResponse` streaming |
+| Platforms | Windows + Linux/macOS (cross-platform APIs throughout) |
 | DevOps | Native setup/start scripts (`setup.sh/.bat`, `start.sh/.bat`) |
 
 ---
