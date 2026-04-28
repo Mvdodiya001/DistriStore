@@ -61,6 +61,9 @@ def _init():
 @asynccontextmanager
 async def lifespan(app):
     """Start P2P node when FastAPI starts, stop on shutdown."""
+    # Set the API port on node state so HELLO broadcasts include it
+    config = get_config()
+    _node.state.api_port = int(os.environ.get("DS_API_PORT", config.api.port))
     await _node.start()
     logger.info("DistriStore node started alongside API server")
     yield

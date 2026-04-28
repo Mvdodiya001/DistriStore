@@ -101,6 +101,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
             free_space=free_space_bytes,
             uptime=msg.get("uptime", 0),
             health_score=health.get("health_score", 0),
+            api_port=msg.get("api_port", 8888),
         )
 
         logger.debug(
@@ -124,6 +125,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
             "node_id": self.state.node_id,
             "name": self.state.name,
             "tcp_port": getattr(self.state, 'tcp_port', 0),
+            "api_port": getattr(self.state, 'api_port', 8888),
             "uptime": self.state.uptime,
             "timestamp": time.time(),
             "health": health,

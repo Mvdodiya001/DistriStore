@@ -109,39 +109,86 @@ async def download_file(
 ):
     """
     Download a file by its hash: load chunks, decrypt, merge to disk.
-    Uses O(1) memory — streams decrypted chunks directly to a temp file,
-    then serves it via FileResponse with background cleanup.
+    If the manifest or chunks aren't stored locally, fetches them from
+    discovered peers via their HTTP API — enabling true cross-node downloads.
     """
-    if not _local_store:
+    if not _local_store or not _node:
         raise HTTPException(503, "Node not initialized")
 
+    import httpx
     from backend.file_engine.chunker import merge_chunks_to_disk, FileManifest
 
-    # Load manifest
+    # ── Step 1: Load or fetch manifest ─────────────────────────────
     manifest_dict = _local_store.load_manifest(file_hash)
+
     if not manifest_dict:
-        raise HTTPException(404, f"File manifest not found for hash: {file_hash}")
+        # Not local — ask peers
+        logger.info(f"Manifest {file_hash[:16]}... not local, querying peers...")
+        peers = await _node.state.get_alive_peers()
+        for nid, peer in peers.items():
+            peer_url = f"http://{peer.ip}:{peer.api_port}/manifest/{file_hash}"
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.get(peer_url)
+                if resp.status_code == 200:
+                    manifest_dict = resp.json()
+                    # Cache it locally for next time
+                    _local_store.save_manifest(file_hash, manifest_dict)
+                    logger.info(f"Fetched manifest from peer {peer.name} ({peer.ip})")
+                    break
+            except Exception as e:
+                logger.debug(f"Peer {peer.ip}:{peer.api_port} manifest fetch failed: {e}")
+                continue
+
+    if not manifest_dict:
+        raise HTTPException(404, f"File not found on this node or any peer: {file_hash}")
 
     manifest = FileManifest.from_dict(manifest_dict)
 
-    # Load all chunks (data stays on disk, only loaded one-at-a-time in merger)
+    # ── Step 2: Load or fetch chunks ───────────────────────────────
     chunks = []
+    peers = None  # Lazy-load peer list only if needed
+
     for info in manifest.chunks:
         data = _local_store.load_chunk(info.chunk_hash)
+
         if data is None:
-            raise HTTPException(404, f"Chunk missing: {info.chunk_hash[:16]}...")
+            # Not local — fetch from peers
+            if peers is None:
+                peers = await _node.state.get_alive_peers()
+
+            fetched = False
+            for nid, peer in peers.items():
+                chunk_url = f"http://{peer.ip}:{peer.api_port}/chunk/{info.chunk_hash}"
+                try:
+                    async with httpx.AsyncClient(timeout=30) as client:
+                        resp = await client.get(chunk_url)
+                    if resp.status_code == 200:
+                        data = resp.content
+                        # Cache chunk locally
+                        _local_store.save_chunk(info.chunk_hash, data)
+                        logger.debug(
+                            f"Fetched chunk {info.chunk_hash[:12]}... from {peer.name} ({peer.ip})"
+                        )
+                        fetched = True
+                        break
+                except Exception as e:
+                    logger.debug(f"Peer {peer.ip} chunk fetch failed: {e}")
+                    continue
+
+            if not fetched:
+                raise HTTPException(404, f"Chunk {info.chunk_hash[:16]}... not found on any node")
+
         chunks.append(data)
 
-    # Generate safe temp file path
+    # ── Step 3: Merge + decrypt to disk ────────────────────────────
     temp_dir = _local_store.storage_dir
     temp_file = os.path.join(str(temp_dir), f"temp_{uuid.uuid4().hex}.bin")
 
-    # Merge + decrypt directly to disk — O(1) memory
     try:
         pwd = password if password else None
         merge_chunks_to_disk(manifest, chunks, temp_file, password=pwd)
     except ValueError as e:
-        # Clean up temp file on error
         if os.path.exists(temp_file):
             os.unlink(temp_file)
         raise HTTPException(400, f"Decryption/integrity error: {e}")
@@ -152,7 +199,7 @@ async def download_file(
 
     logger.info(
         f"Serving '{manifest.original_filename}' ({manifest.original_size} bytes) "
-        f"via FileResponse [O(1) memory]"
+        f"via FileResponse [cross-node capable]"
     )
 
     return FileResponse(
@@ -163,23 +210,53 @@ async def download_file(
 
 
 @router.get("/files")
-async def list_files():
-    """List all stored file manifests."""
+async def list_files(local_only: bool = False):
+    """List all stored file manifests — local and from discovered peers."""
     if not _local_store:
         raise HTTPException(503, "Node not initialized")
 
     import json
+    import httpx
+
+    # Local files
     manifests = []
+    seen_hashes = set()
     storage_path = _local_store.storage_dir
     for f in storage_path.glob("manifest_*.json"):
         data = json.loads(f.read_text())
+        fh = data.get("file_hash")
+        seen_hashes.add(fh)
         manifests.append({
-            "file_hash": data.get("file_hash"),
+            "file_hash": fh,
             "filename": data.get("original_filename"),
             "size": data.get("original_size"),
             "chunks": len(data.get("chunks", [])),
             "merkle_root": data.get("merkle_root", ""),
+            "source": "local",
         })
+
+    # Also fetch file lists from alive peers (skip if this is a peer-to-peer call)
+    if _node and not local_only:
+        peers = await _node.state.get_alive_peers()
+        for nid, peer in peers.items():
+            try:
+                async with httpx.AsyncClient(timeout=5) as client:
+                    # Pass local_only=true to prevent recursion
+                    resp = await client.get(
+                        f"http://{peer.ip}:{peer.api_port}/files",
+                        params={"local_only": "true"},
+                    )
+                if resp.status_code == 200:
+                    peer_files = resp.json().get("files", [])
+                    for pf in peer_files:
+                        fh = pf.get("file_hash")
+                        if fh and fh not in seen_hashes:
+                            seen_hashes.add(fh)
+                            pf["source"] = f"peer:{peer.name}"
+                            manifests.append(pf)
+            except Exception:
+                continue  # Peer unreachable, skip
+
     return {"files": manifests}
 
 

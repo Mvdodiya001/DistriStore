@@ -92,5 +92,6 @@ class LocalStore:
 
     def get_free_space(self) -> int:
         """Free space on the partition holding the storage dir."""
-        stat = os.statvfs(str(self.storage_dir))
-        return stat.f_bavail * stat.f_frsize
+        import shutil
+        usage = shutil.disk_usage(str(self.storage_dir))
+        return usage.free

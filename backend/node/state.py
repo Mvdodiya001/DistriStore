@@ -25,6 +25,7 @@ class PeerInfo:
     uptime: float = 0.0       # seconds since peer boot
     latency: float = 0.0      # round-trip ms to this peer
     health_score: float = 0.0 # computed health score from HELLO
+    api_port: int = 8888      # HTTP API port for cross-node requests
 
     def is_alive(self, timeout: int = 15) -> bool:
         """Check if peer has been seen within the timeout window."""
@@ -76,6 +77,8 @@ class NodeState:
                     existing.health_score = peer.health_score
                 if peer.name and peer.name != "unknown":
                     existing.name = peer.name
+                if peer.api_port:
+                    existing.api_port = peer.api_port
                 logger.debug(f"Updated peer {peer.node_id[:12]}... ({peer.ip})")
             else:
                 peer.last_seen = time.time()
@@ -178,6 +181,7 @@ class NodeState:
                     "health_score": p.health_score,
                     "free_space": p.free_space,
                     "uptime": p.uptime,
+                    "api_port": p.api_port,
                 }
                 for nid, p in peers.items()
             },
