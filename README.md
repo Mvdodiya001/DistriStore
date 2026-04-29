@@ -259,6 +259,7 @@ api:
 
 | Document | Description |
 |----------|-------------|
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System design, class diagrams, sequence diagrams, ER diagrams |
 | [PROGRESS.md](PROGRESS.md) | Phase-by-phase implementation tracker |
 | [BENCHMARKS.md](BENCHMARKS.md) | All performance data and test results |
 
