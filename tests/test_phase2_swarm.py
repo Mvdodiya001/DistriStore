@@ -88,7 +88,7 @@ def run_test():
     print("  DistriStore — Phase 2.3: Parallel Swarming Verification")
     print("=" * 65)
 
-    venv_python = os.path.join(os.path.dirname(__file__), "..", ".venv", "bin", "python")
+    venv_python = sys.executable
     project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     tmp_dir = os.path.join(project_dir, ".test_swarm")
     os.makedirs(tmp_dir, exist_ok=True)
