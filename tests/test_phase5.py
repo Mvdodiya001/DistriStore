@@ -24,7 +24,7 @@ def run_test():
     print("  DistriStore — Phase 5 Verification Test")
     print("=" * 60)
 
-    venv_python = os.path.join(os.path.dirname(__file__), "..", ".venv", "bin", "python")
+    venv_python = sys.executable
     project_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     tmp_dir = os.path.join(project_dir, ".test_tmp_p5")
     os.makedirs(tmp_dir, exist_ok=True)
