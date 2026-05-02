@@ -82,12 +82,12 @@ Files are split, encrypted, and replicated across the network. Any node can serv
 <td width="50%" valign="top">
 
 ### Performance
-- **0.67 s** end-to-end on 100 MB
+- **1.16 s** end-to-end on 100 MB
+- **6.63 s** end-to-end on 505 MB
 - **8.52×** ProcessPool speedup
 - **Dynamic chunk sizing**: 256KB / 1MB / 4MB auto-selected
 - **O(1)** memory-stable downloads via `FileResponse`
 - **Async disk I/O** via `asyncio.to_thread`
-- Swarmed parallel chunk fetch
 
 </td>
 </tr>
@@ -111,7 +111,7 @@ Files are split, encrypted, and replicated across the network. Any node can serv
 - **Heartbeat** liveness monitoring
 - **XOR-distance** Kademlia routing
 - Cross-node manifest + chunk fetch
-- **1MB TCP buffers** for large chunk transfers
+- **8MB TCP stream limit** for 4MB chunk support
 
 </td>
 </tr>
@@ -281,23 +281,27 @@ distristore/
 
 ## Performance
 
-### Core Suite — AES-256-GCM + Merkle (avg **95.2 ms**)
+### Core Suite — Phase 13 Dynamic Sizing (avg **78.8 ms** for small files)
 
 | Size | Chunks | Encrypt | Decrypt | **Total** |
 |---|---|---|---|---|
-| 64 KB | 1   | 46 ms | 46 ms | **94 ms**  |
-| 1 MB  | 4   | 32 ms | 35 ms | **68 ms**  |
-| 10 MB | 40  | 71 ms | 88 ms | **174 ms** |
+| 64 KB | 1   | 31 ms | 26 ms | **57 ms**  |
+| 1 MB  | 4   | 28 ms | 29 ms | **59 ms**  |
+| 10 MB | 40  | 59 ms | 68 ms | **138 ms** |
+| 100 MB | 100 | 384 ms | 571 ms | **1.16 s** |
+| 505 MB | 127 | 2.24 s | 3.31 s | **6.63 s** |
 
-### 100 MB End-to-End
+> **Note:** 505 MB test triggers 4MB dynamic chunks, reducing overhead by 16x compared to static 256KB chunks.
+
+### 100 MB Code Performance
 
 | Metric | Result |
 |---|---|
-| Chunk + Encrypt (400 chunks) | 0.38 s |
-| Merge + Decrypt (400 chunks) | 0.29 s |
-| **Total round-trip** | **0.67 s** |
+| Pure Chunk + Encrypt | 0.38 s |
+| Pure Merge + Decrypt | 0.29 s |
+| **Total code time** | **0.67 s** |
 | ProcessPool speedup | **8.52×** |
-| O(N) linearity (10 → 100 MB) | 5.9× ratio ✅ |
+| O(N) linearity | 5.9× ratio ✅ |
 
 > Figures reflect native local execution. Full data set: [BENCHMARKS.md](BENCHMARKS.md)
 
@@ -354,6 +358,11 @@ python -m tests.test_phase2_merkle   # Merkle root + proof verification
 python -m tests.test_phase2_swarm    # Parallel chunk downloads
 python -m tests.test_phase2_health   # Health-scored discovery
 python -m tests.test_phase3_perf     # 100 MB O(N) performance test
+
+# Advanced Features & Throughput
+python -m tests.test_phase10_dynamic_ports
+python -m tests.test_phase12_cross_node
+python -m tests.test_phase13_throughput
 
 # Full benchmark suite
 python -m backend.benchmark.benchmark

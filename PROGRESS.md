@@ -451,6 +451,11 @@ python -m tests.test_phase2_health
 # Performance test
 python -m tests.test_phase3_perf
 
+# Advanced features & Edge Cases
+python -m tests.test_phase10_dynamic_ports
+python -m tests.test_phase12_cross_node
+python -m tests.test_phase13_throughput
+
 # Benchmark
 python -m backend.benchmark.benchmark
 

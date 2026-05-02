@@ -7,26 +7,23 @@
 
 ## 📊 1. Core Benchmark Suite (Encrypt → Store → Load → Decrypt)
 
-10 file sizes tested end-to-end with AES-256-GCM encryption, SHA-256 hashing, and Merkle root verification.
+7 file sizes tested end-to-end with Phase 13 Dynamic Chunk Sizing, AES-256-GCM encryption, SHA-256 hashing, and Merkle root verification.
 
 | File Size | Chunks | Encrypt | Store | Load | Decrypt | **Total** | Status |
 |-----------|--------|---------|-------|------|---------|-----------|--------|
-| 64 KB | 1 | 46.4ms | 1.3ms | 0.1ms | 45.8ms | **93.6ms** | ✅ PASS |
-| 128 KB | 1 | 46.0ms | 1.2ms | 0.1ms | 34.7ms | **81.9ms** | ✅ PASS |
-| 256 KB | 1 | 34.9ms | 1.4ms | 0.2ms | 32.8ms | **69.4ms** | ✅ PASS |
-| 512 KB | 2 | 30.9ms | 1.2ms | 0.2ms | 32.2ms | **64.6ms** | ✅ PASS |
-| 1 MB | 4 | 31.9ms | 0.8ms | 0.3ms | 35.2ms | **68.2ms** | ✅ PASS |
-| 2 MB | 8 | 36.6ms | 2.6ms | 1.4ms | 41.9ms | **82.6ms** | ✅ PASS |
-| 3 MB | 12 | 40.7ms | 2.3ms | 1.8ms | 48.2ms | **93.0ms** | ✅ PASS |
-| 4 MB | 16 | 43.4ms | 3.5ms | 2.2ms | 52.7ms | **101.8ms** | ✅ PASS |
-| 5 MB | 20 | 48.8ms | 10.2ms | 1.7ms | 62.1ms | **122.7ms** | ✅ PASS |
-| 10 MB | 40 | 70.6ms | 7.0ms | 8.8ms | 87.8ms | **174.2ms** | ✅ PASS |
+| 64 KB | 1 | 30.7ms | 0.6ms | 0.1ms | 26.0ms | **57.4ms** | ✅ PASS |
+| 256 KB | 1 | 26.2ms | 0.4ms | 0.1ms | 25.0ms | **51.7ms** | ✅ PASS |
+| 1 MB | 4 | 28.4ms | 1.0ms | 0.2ms | 29.4ms | **59.0ms** | ✅ PASS |
+| 10 MB | 40 | 59.2ms | 4.2ms | 5.8ms | 68.4ms | **137.6ms** | ✅ PASS |
+| 55 MB | 55 | 223.0ms | 27.4ms | 28.4ms | 269.3ms | **548.1ms** | ✅ PASS |
+| 100 MB | 100 | 384.1ms | 168.4ms | 43.7ms | 571.1ms | **1167.3ms** | ✅ PASS |
+| 505 MB | 127 | 2247.3ms | 422.3ms | 653.2ms | 3309.7ms | **6632.5ms** | ✅ PASS |
 
-- **Average turnaround:** 95.2ms
+- **Average turnaround:** 1236.2ms
 - **All integrity checks:** ✅ PASSED
 - **Encryption:** AES-256-GCM (Authenticated Encryption)
 - **Hashing:** SHA-256 per chunk + Merkle tree root
-- **Chunk size:** 256 KB
+- **Chunk size:** Dynamic (256 KB / 1 MB / 4 MB) via Phase 13 logic
 
 ### Key Observations
 
@@ -140,9 +137,10 @@ Testing that time scales linearly with file size (not quadratically):
 
 | File Size | Encrypt Speed | Decrypt Speed | Total Speed |
 |-----------|--------------|---------------|-------------|
-| 1 MB | 31.3 MB/s | 28.4 MB/s | 14.7 MB/s |
-| 10 MB | 141.6 MB/s | 113.9 MB/s | 57.4 MB/s |
-| 100 MB | 263.2 MB/s | 344.8 MB/s | 149.3 MB/s |
+| 1 MB | 35.2 MB/s | 34.0 MB/s | 16.9 MB/s |
+| 10 MB | 168.9 MB/s | 146.2 MB/s | 72.7 MB/s |
+| 100 MB | 260.3 MB/s | 175.1 MB/s | 85.7 MB/s |
+| 505 MB | 224.7 MB/s | 152.6 MB/s | 76.1 MB/s |
 
 > Throughput improves with file size due to PBKDF2 key derivation being amortized.
 

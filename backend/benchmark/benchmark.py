@@ -13,24 +13,21 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", ".."))
 
 from backend.utils.logger import setup_logging, get_logger
-from backend.file_engine.chunker import chunk_file, merge_chunks
+from backend.file_engine.chunker import chunk_file, merge_chunks, get_optimal_chunk_size
 from backend.file_engine.crypto import sha256_hash
 from backend.storage.local_store import LocalStore
 
 logger = get_logger("benchmark")
 
-# Test file sizes: 10 files from 64KB to 10MB
+# Test file sizes: from 64KB up to 505MB to trigger all Phase 13 dynamic chunk tiers
 TEST_SIZES = [
     64 * 1024,        # 64 KB
-    128 * 1024,       # 128 KB
     256 * 1024,       # 256 KB
-    512 * 1024,       # 512 KB
     1024 * 1024,      # 1 MB
-    2 * 1024 * 1024,  # 2 MB
-    3 * 1024 * 1024,  # 3 MB
-    4 * 1024 * 1024,  # 4 MB
-    5 * 1024 * 1024,  # 5 MB
-    10 * 1024 * 1024, # 10 MB
+    10 * 1024 * 1024, # 10 MB (256KB chunks)
+    55 * 1024 * 1024, # 55 MB (Phase 13: Triggers 1MB chunks)
+    100 * 1024 * 1024,# 100 MB (Phase 13: Triggers 1MB chunks)
+    505 * 1024 * 1024,# 505 MB (Phase 13: Triggers 4MB chunks)
 ]
 
 
@@ -43,7 +40,7 @@ def format_bytes(b):
 def run_benchmark():
     setup_logging("INFO")
     print("=" * 70)
-    print("  DistriStore — Benchmark Suite")
+    print("  DistriStore — Phase 13 Benchmark Suite")
     print("=" * 70)
 
     tmp_dir = os.path.join(os.path.dirname(__file__), "..", ".benchmark_tmp")
@@ -55,7 +52,7 @@ def run_benchmark():
 
     password = "benchmark-password"
 
-    print(f"\nRunning {len(TEST_SIZES)} tests...\n")
+    print(f"\nRunning {len(TEST_SIZES)} tests (Including Phase 13 dynamic tiers)...\n")
     print(f"{'Size':>10} | {'Chunk':>6} | {'Encrypt':>10} | {'Store':>10} | {'Load':>10} | {'Decrypt':>10} | {'Total':>10} | {'Status'}")
     print("-" * 90)
 
@@ -68,9 +65,10 @@ def run_benchmark():
             f.write(data)
 
         try:
-            # 1. Chunk + Encrypt
+            # 1. Chunk + Encrypt (Phase 13: Dynamic Sizing)
             t0 = time.perf_counter()
-            manifest, chunks = chunk_file(test_file, password=password)
+            opt_chunk_size = get_optimal_chunk_size(size)
+            manifest, chunks = chunk_file(test_file, chunk_size=opt_chunk_size, password=password)
             t_chunk = time.perf_counter() - t0
 
             # 2. Store to disk
