@@ -1,7 +1,7 @@
 # DistriStore — Project Progress Tracker
 
 > **LAN-Optimized P2P Distributed Hash Table (DHT) Storage Framework**
-> Last Updated: 2026-04-26
+> Last Updated: 2026-05-03
 
 ---
 
@@ -21,9 +21,11 @@ Phase 8 (Enterprise UI)   ██████████████████
 Phase 9 (Docker)          ████████████████████ 100% ✅
 Phase 10 (Dynamic Ports)  ████████████████████ 100% ✅
 Phase 11 (LAN Access)     ████████████████████ 100% ✅
+Phase 12 (Cross-Node)     ████████████████████ 100% ✅
+Phase 13 (Adv Throughput)  ████████████████████ 100% ✅
 ```
 
-**Current Position: All 13 phases complete. Production-ready with LAN/Network support.**
+**Current Position: All 15 phases complete. Max throughput + reliability.**
 
 ---
 
@@ -313,6 +315,57 @@ Phase 11 (LAN Access)     ██████████████████
 
 ---
 
+## 🔷 Phase 13 — Advanced Throughput & Reliability
+
+### 13a. Dynamic Chunk Sizing
+
+| File Size | Chunk Size | Rationale | Status |
+|-----------|-----------|-----------|--------|
+| < 50 MB | 256 KB | Fine-grained, fast for small files | ✅ |
+| 50–500 MB | 1 MB | Balanced throughput / chunk count | ✅ |
+| > 500 MB | 4 MB | Minimizes chunk overhead on large files | ✅ |
+
+- **Implementation:** `get_optimal_chunk_size()` in `backend/file_engine/chunker.py`
+- **Pipeline integration:** `pipeline_chunk_and_store()` auto-selects when `chunk_size=None`
+- **Manifest storage:** Selected chunk size saved in `FileManifest.chunk_size` for downloaders
+
+### 13b. Multithreaded Disk I/O
+
+| Operation | Before | After | Status |
+|-----------|--------|-------|--------|
+| File read (chunking) | Blocking `open().read()` | `asyncio.to_thread()` wrapper | ✅ |
+| File hash (SHA-256) | Blocking `hashlib` loop | `_async_streaming_file_hash()` | ✅ |
+| Chunk write to disk | Blocking `f.write()` | `asyncio.to_thread(f.write, data)` | ✅ |
+| Merge-to-disk writes | Blocking per-chunk write | `asyncio.to_thread()` in pipeline | ✅ |
+
+- **Implementation:** `_async_read_file_chunks()`, `_async_streaming_file_hash()`, `_async_write_bytes()` in `chunker.py`
+- **Event loop safety:** Network I/O never blocked by disk operations
+
+### 13c. Sliding Window & Selective Retransmission
+
+| Component | Value | Description | Status |
+|-----------|-------|-------------|--------|
+| `MAX_WINDOW_SIZE` | 20 | Max concurrent in-flight chunks | ✅ |
+| `TIMEOUT_SECONDS` | 3.0 | Retransmit threshold per chunk | ✅ |
+| `SWEEP_INTERVAL` | 2.0 | Background sweep frequency | ✅ |
+| `MAX_RETRIES` | 5 | Max retransmission attempts | ✅ |
+| `CHUNK_ACK` protocol | — | Per-chunk acknowledgment message | ✅ |
+
+- **Implementation:** `backend/strategies/sliding_window.py`
+- **Classes:** `SlidingWindowSender` (per-peer), `SlidingWindowReplicationEngine` (file-level)
+- **Selective Retransmission:** Only timed-out chunks are resent, not the whole batch
+
+### 13d. TCP Buffer Tuning
+
+| Setting | Before | After | Status |
+|---------|--------|-------|--------|
+| `BUFFER_SIZE` | 64 KB | 1 MB | ✅ |
+| `STREAM_LIMIT` | 1 MB | 8 MB | ✅ |
+| `reader._limit` | 1 MB | 8 MB (matches STREAM_LIMIT) | ✅ |
+
+**Verification:** All existing test suites pass (Phase 1–5, 2R, 3O) ✅
+
+
 ## 📁 Project Structure
 
 ```
@@ -337,7 +390,8 @@ distristore/
 │   ├── framework/client.py          # Python SDK + swarmed downloads
 │   ├── strategies/
 │   │   ├── selector.py              # Heuristic peer scoring
-│   │   └── replication.py           # k-copy replication
+│   │   ├── replication.py           # k-copy replication
+│   │   └── sliding_window.py        # Sliding window + selective retransmit
 │   ├── advanced/
 │   │   ├── heartbeat.py             # Peer liveness monitor
 │   │   └── self_healing.py          # Auto re-replication

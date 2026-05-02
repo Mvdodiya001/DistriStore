@@ -17,6 +17,7 @@ MSG_HANDSHAKE_ACK = "HANDSHAKE_ACK"
 MSG_HELLO         = "HELLO"
 MSG_STORE_CHUNK   = "STORE_CHUNK"
 MSG_STORE_ACK     = "STORE_ACK"
+MSG_CHUNK_ACK     = "CHUNK_ACK"      # Sliding window per-chunk acknowledgment
 MSG_GET_CHUNK     = "GET_CHUNK"
 MSG_CHUNK_DATA    = "CHUNK_DATA"
 MSG_FIND_NODE     = "FIND_NODE"
@@ -74,3 +75,8 @@ def ping_msg(sender_id: str) -> dict:
 
 def pong_msg(sender_id: str, uptime: float, free_space: int) -> dict:
     return build_message(MSG_PONG, sender_id, uptime=uptime, free_space=free_space)
+
+
+def chunk_ack_msg(sender_id: str, chunk_hash: str, index: int) -> dict:
+    """Build a CHUNK_ACK message for sliding window acknowledgment."""
+    return build_message(MSG_CHUNK_ACK, sender_id, chunk_hash=chunk_hash, index=index)

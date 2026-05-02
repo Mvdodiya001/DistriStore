@@ -6,8 +6,13 @@ Phase 3: Performance Optimization
   - Pre-allocated bytearray merger: O(N) time, no quadratic reallocation
   - Streaming-to-disk merger: O(1) memory for arbitrarily large files
   - Merkle tree computed incrementally during streaming
+
+Phase 10: Advanced Throughput
+  - Dynamic chunk sizing: 256KB / 1MB / 4MB based on file size
+  - Async disk I/O wrappers via asyncio.to_thread (non-blocking)
 """
 
+import asyncio
 import io
 import os
 from dataclasses import dataclass, field
@@ -20,6 +25,30 @@ from backend.utils.logger import get_logger
 logger = get_logger("file_engine.chunker")
 
 DEFAULT_CHUNK_SIZE = 262144  # 256 KB
+
+# ── Dynamic Chunk Sizing Thresholds ────────────────────────────
+_CHUNK_256KB = 262_144       # 256 KB
+_CHUNK_1MB   = 1_048_576     # 1 MB
+_CHUNK_4MB   = 4_194_304     # 4 MB
+_TIER_50MB   = 50  * 1024 * 1024
+_TIER_500MB  = 500 * 1024 * 1024
+
+
+def get_optimal_chunk_size(file_size_bytes: int) -> int:
+    """
+    Select chunk size dynamically based on file size.
+
+    Tiers:
+      - < 50 MB  → 256 KB  (fine-grained, fast for small files)
+      - 50–500 MB → 1 MB   (balanced throughput / chunk count)
+      - > 500 MB → 4 MB    (minimizes chunk overhead on large files)
+    """
+    if file_size_bytes < _TIER_50MB:
+        return _CHUNK_256KB
+    elif file_size_bytes < _TIER_500MB:
+        return _CHUNK_1MB
+    else:
+        return _CHUNK_4MB
 
 
 # ── Merkle Tree ────────────────────────────────────────────────
@@ -165,6 +194,40 @@ def _streaming_file_hash(file_path: str) -> str:
                 break
             h.update(block)
     return h.hexdigest()
+
+
+# ── Async Disk I/O Wrappers (non-blocking) ─────────────────────
+
+async def _async_read_file_chunks(file_path: str, chunk_size: int) -> List[Tuple[int, bytes]]:
+    """
+    Read all chunks from a file using asyncio.to_thread so the event loop
+    never blocks on synchronous disk I/O.
+    """
+    def _read():
+        results = []
+        idx = 0
+        with open(file_path, "rb") as f:
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    break
+                results.append((idx, chunk))
+                idx += 1
+        return results
+    return await asyncio.to_thread(_read)
+
+
+async def _async_streaming_file_hash(file_path: str) -> str:
+    """Non-blocking file hash using asyncio.to_thread."""
+    return await asyncio.to_thread(_streaming_file_hash, file_path)
+
+
+async def _async_write_bytes(path: str, data: bytes) -> None:
+    """Non-blocking file write using asyncio.to_thread."""
+    def _write():
+        with open(path, "wb") as f:
+            f.write(data)
+    await asyncio.to_thread(_write)
 
 
 # ── Core: Streaming Chunker ───────────────────────────────────

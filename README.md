@@ -84,8 +84,9 @@ Files are split, encrypted, and replicated across the network. Any node can serv
 ### Performance
 - **0.67 s** end-to-end on 100 MB
 - **8.52×** ProcessPool speedup
-- **O(N)** linearity verified up to 100 MB
+- **Dynamic chunk sizing**: 256KB / 1MB / 4MB auto-selected
 - **O(1)** memory-stable downloads via `FileResponse`
+- **Async disk I/O** via `asyncio.to_thread`
 - Swarmed parallel chunk fetch
 
 </td>
@@ -104,11 +105,13 @@ Files are split, encrypted, and replicated across the network. Any node can serv
 <td width="50%" valign="top">
 
 ### Reliability
+- **Sliding window** replication (window=20, selective retransmit)
 - **k-copy replication** (default k=3)
 - **Self-healing** chunk re-replication on failure
 - **Heartbeat** liveness monitoring
 - **XOR-distance** Kademlia routing
 - Cross-node manifest + chunk fetch
+- **1MB TCP buffers** for large chunk transfers
 
 </td>
 </tr>

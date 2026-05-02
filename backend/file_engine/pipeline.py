@@ -1,11 +1,14 @@
-"""
-DistriStore — Chunk Pipeline (Streaming Architecture)
+"""DistriStore — Chunk Pipeline (Streaming Architecture)
 
 Phase 3: Instead of Read All → Chunk All → Encrypt All → Send All,
 this pipeline does: Read 256KB → Encrypt → Store → Read next 256KB.
 
 The network transmits chunk[0] while the CPU encrypts chunk[1].
 Uses asyncio + ProcessPoolExecutor for true overlap.
+
+Phase 10: Advanced Throughput
+  - Dynamic chunk sizing via get_optimal_chunk_size()
+  - Disk writes wrapped in asyncio.to_thread (non-blocking)
 """
 
 import asyncio
@@ -19,8 +22,10 @@ from backend.file_engine.crypto import (
     _get_pool, _MAX_WORKERS,
 )
 from backend.file_engine.chunker import (
-    _stream_chunks, _streaming_file_hash, FileManifest, ChunkInfo,
-    compute_merkle_root, DEFAULT_CHUNK_SIZE,
+    _stream_chunks, _streaming_file_hash,
+    _async_streaming_file_hash,
+    FileManifest, ChunkInfo,
+    compute_merkle_root, DEFAULT_CHUNK_SIZE, get_optimal_chunk_size,
 )
 from backend.utils.logger import get_logger
 
@@ -30,11 +35,14 @@ logger = get_logger("file_engine.pipeline")
 async def pipeline_chunk_and_store(
     file_path: str,
     store_fn: Callable[[str, bytes], Awaitable[None]],
-    chunk_size: int = DEFAULT_CHUNK_SIZE,
+    chunk_size: int = None,
     password: str = None,
 ) -> FileManifest:
     """
     Streaming pipeline: Read → Encrypt → Store, one chunk at a time.
+
+    If chunk_size is None, uses get_optimal_chunk_size() to auto-select
+    based on file size (256KB / 1MB / 4MB).
 
     While chunk[N] is being stored (I/O bound), chunk[N+1] is being
     encrypted (CPU bound in a process pool). This overlaps I/O and CPU.
@@ -53,6 +61,12 @@ async def pipeline_chunk_and_store(
         raise FileNotFoundError(f"File not found: {file_path}")
 
     file_size = path.stat().st_size
+
+    # Auto-select chunk size if not explicitly provided
+    if chunk_size is None:
+        chunk_size = get_optimal_chunk_size(file_size)
+    logger.info(f"Chunk size for '{path.name}' ({file_size} bytes): {chunk_size // 1024}KB")
+
     loop = asyncio.get_running_loop()
     pool = _get_pool()
 
@@ -155,7 +169,8 @@ async def pipeline_merge_to_disk(
             else:
                 plaintext = data
 
-            f.write(plaintext)
+            # Non-blocking disk write via asyncio.to_thread
+            await asyncio.to_thread(f.write, plaintext)
             h.update(plaintext)
 
             # Get prefetched data

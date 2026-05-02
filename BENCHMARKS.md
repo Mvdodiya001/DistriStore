@@ -1,7 +1,7 @@
 # DistriStore — Benchmarks
 
 > All benchmarks run on the same machine with AES-256-GCM encryption + Merkle verification enabled.
-> Last verified: 2026-04-26 (Phase 10 — Dynamic Ports + Docker re-verification)
+> Last verified: 2026-05-03 (Phase 13 — Advanced Throughput + Sliding Window)
 
 ---
 
@@ -245,6 +245,47 @@ The `/download/{hash}` endpoint uses `FileResponse` + `BackgroundTasks` for O(1)
 
 ---
 
+## 📊 11. Advanced Throughput & Reliability (Phase 13)
+
+### Dynamic Chunk Sizing
+
+| File Size Range | Chunk Size | Chunks for 100MB | Chunks for 1GB |
+|----------------|-----------|-----------------|----------------|
+| < 50 MB | 256 KB | 400 | 4,096 |
+| 50–500 MB | 1 MB | 100 | 1,024 |
+| > 500 MB | 4 MB | 25 | 256 |
+
+> Dynamic sizing reduces manifest overhead by up to 16x for large files (4096 → 256 chunks for 1GB).
+
+### Sliding Window Protocol
+
+| Parameter | Value | Purpose |
+|-----------|-------|---------|
+| `MAX_WINDOW_SIZE` | 20 chunks | Concurrent in-flight transfers |
+| `TIMEOUT_SECONDS` | 3.0s | Per-chunk ACK deadline |
+| `SWEEP_INTERVAL` | 2.0s | Retransmit sweep frequency |
+| `MAX_RETRIES` | 5 | Retry limit before giving up |
+| Retransmission | Selective | Only timed-out chunks resent |
+
+### TCP Buffer Tuning
+
+| Setting | Before | After | Why |
+|---------|--------|-------|-----|
+| `BUFFER_SIZE` | 64 KB | 1 MB | Supports 1MB/4MB dynamic chunks |
+| `STREAM_LIMIT` | 1 MB | 8 MB | Prevents `LimitOverrunError` on 4MB chunks |
+| `reader._limit` | 1 MB | 8 MB | Matches STREAM_LIMIT |
+
+### Async Disk I/O
+
+| Operation | Mechanism | Blocking? |
+|-----------|-----------|----------|
+| File read (chunking) | `asyncio.to_thread()` | ❌ Non-blocking |
+| File hash (SHA-256) | `asyncio.to_thread()` | ❌ Non-blocking |
+| Chunk write (store) | `asyncio.to_thread()` | ❌ Non-blocking |
+| Merge-to-disk | `asyncio.to_thread(f.write)` | ❌ Non-blocking |
+
+> All disk I/O runs in a `ThreadPoolExecutor`, keeping the asyncio event loop free for network traffic.
+
 ## 🔄 How to Run
 
 ```bash
@@ -292,4 +333,5 @@ docker compose down
 | Phase 8 | Memory-safe FileResponse download | `curl` upload → download → sha256sum | ✅ |
 | Phase 9 | Docker build + compose validation | `docker compose up --build` | ✅ |
 | Phase 10 | Dynamic ports + deployment scripts | `./start.sh` | ✅ |
+| Phase 13 | Dynamic chunks + sliding window + async I/O | Import + unit verification | ✅ |
 | Benchmark | 10-size throughput suite | `python -m backend.benchmark.benchmark` | ✅ |

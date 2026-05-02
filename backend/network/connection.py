@@ -14,8 +14,8 @@ logger = get_logger("network.connection")
 
 # Message delimiter — newline-separated JSON
 DELIMITER = b"\n"
-BUFFER_SIZE = 65536
-STREAM_LIMIT = 1024 * 1024  # 1 MB — prevents LimitOverrunError on large messages
+BUFFER_SIZE = 1048576          # 1 MB — supports dynamic 1MB and 4MB chunks
+STREAM_LIMIT = 8 * 1024 * 1024  # 8 MB — prevents LimitOverrunError on large 4MB chunks
 
 
 class PeerConnection:
@@ -26,8 +26,8 @@ class PeerConnection:
         self.writer = writer
         self.peer_id = peer_id
         self.addr = writer.get_extra_info("peername")
-        # Increase the internal buffer limit to handle large messages (1 MB)
-        self.reader._limit = 1024 * 1024
+        # Increase the internal buffer limit to handle large messages (8 MB)
+        self.reader._limit = STREAM_LIMIT
 
     async def send(self, message: dict) -> None:
         data = json.dumps(message).encode() + DELIMITER
