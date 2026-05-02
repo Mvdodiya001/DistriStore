@@ -75,9 +75,9 @@ async def lifespan(app):
 _init()
 
 app = FastAPI(
-    title="DistriStore",
-    description="LAN-optimized P2P Distributed Hash Table Storage",
+    title="DistriStore API",
     version="1.0.0",
+    description="Zero-Config P2P Storage Mesh",
     lifespan=lifespan,
 )
 app.add_middleware(

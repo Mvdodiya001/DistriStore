@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: pip install -r requirements.txt
+
+      - name: Install Node dependencies
+        working-directory: ./frontend
+        run: npm install
+
+      - name: Run Backend Tests
+        run: |
+          python -m tests.test_phase1
+          python -m tests.test_phase2
+          python -m tests.test_phase3
+          python -m tests.test_phase4
+          python -m tests.test_phase5
+          python -m tests.test_phase2_gcm
+          python -m tests.test_phase2_merkle
+          python -m tests.test_phase2_swarm
+          python -m tests.test_phase2_health
+          python -m tests.test_phase3_perf
+          python -m tests.test_phase10_dynamic_ports
+          python -m tests.test_phase12_cross_node
+          python -m tests.test_phase13_throughput

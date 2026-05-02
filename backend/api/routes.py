@@ -53,7 +53,7 @@ async def upload_file(
     if not _node or not _local_store:
         raise HTTPException(503, "Node not initialized")
 
-    from backend.file_engine.chunker import chunk_file, FileManifest
+    from backend.file_engine.chunker import chunk_file, FileManifest, get_optimal_chunk_size
     from backend.strategies.replication import ReplicationEngine
 
     # Save uploaded file to temp location
@@ -64,9 +64,13 @@ async def upload_file(
         f.write(content)
 
     try:
+        # Get optimal chunk size (Phase 13 Dynamic Chunking)
+        file_size = os.path.getsize(tmp_path)
+        opt_chunk_size = get_optimal_chunk_size(file_size)
+
         # Chunk + encrypt
         pwd = password if password else None
-        manifest, chunks = chunk_file(tmp_path, password=pwd)
+        manifest, chunks = chunk_file(tmp_path, chunk_size=opt_chunk_size, password=pwd)
 
         # Store all chunks locally
         for info, data in zip(manifest.chunks, chunks):
