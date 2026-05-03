@@ -20,3 +20,6 @@ orjson>=3.9.0
 
 # Phase 18: Per-chunk stream compression
 zstandard>=0.22.0
+
+# Phase 19: WebSocket support for swarm chat
+websockets>=12.0

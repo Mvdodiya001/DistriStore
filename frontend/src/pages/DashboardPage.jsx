@@ -2,12 +2,14 @@
  * DashboardPage — Main overview with stats, topology, peers, charts, and file list.
  */
 
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Globe, Clock, Database, HardDrive } from 'lucide-react'
 import useNetworkStore from '../store/useNetworkStore'
 import StatCard from '../components/ui/StatCard'
 import Card from '../components/ui/Card'
 import CopyButton from '../components/ui/CopyButton'
+import PreviewModal, { isPreviewable } from '../components/ui/PreviewModal'
 import NetworkTopology from '../components/network/NetworkTopology'
 import PeerTable from '../components/network/PeerTable'
 import TransferSpeedChart from '../components/network/TransferSpeedChart'
@@ -30,8 +32,23 @@ export default function DashboardPage() {
   const navigate = useNavigate()
   const peerCount = useNetworkStore((s) => s.getPeerCount())
 
+  // Phase 20: Preview modal state
+  const [previewFile, setPreviewFile] = useState(null)
+  const [previewPassword, setPreviewPassword] = useState('')
+  const [showPasswordPrompt, setShowPasswordPrompt] = useState(null)
+
   const handleSelectFile = (hash) => {
     navigate(`/download?hash=${hash}`)
+  }
+
+  const handlePreview = (file) => {
+    // All files are encrypted by default in DistriStore
+    setShowPasswordPrompt(file)
+  }
+
+  const handlePasswordSubmit = () => {
+    setPreviewFile(showPasswordPrompt)
+    setShowPasswordPrompt(null)
   }
 
   return (
@@ -73,6 +90,15 @@ export default function DashboardPage() {
                   <div className="file-hash">{f.file_hash?.slice(0, 20)}...</div>
                   <div className="file-buttons">
                     <CopyButton text={f.file_hash} label="Copy Hash" />
+                    {isPreviewable(f.filename) && (
+                      <button
+                        className="btn-copy btn-preview"
+                        onClick={() => handlePreview(f)}
+                        title="Preview this file"
+                      >
+                        👁️ Preview
+                      </button>
+                    )}
                     <button
                       className="btn-copy btn-dl"
                       onClick={() => handleSelectFile(f.file_hash)}
@@ -87,6 +113,46 @@ export default function DashboardPage() {
           </div>
         )}
       </Card>
+
+      {/* Password Prompt for encrypted preview */}
+      {showPasswordPrompt && (
+        <div className="preview-overlay" onClick={() => setShowPasswordPrompt(null)}>
+          <div className="preview-password-dialog" onClick={(e) => e.stopPropagation()}>
+            <h3>🔑 Enter decryption password</h3>
+            <p className="preview-password-filename">{showPasswordPrompt.filename}</p>
+            <input
+              type="password"
+              className="input-field"
+              placeholder="Password..."
+              value={previewPassword}
+              onChange={(e) => setPreviewPassword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handlePasswordSubmit()}
+              autoFocus
+            />
+            <div className="preview-password-actions">
+              <button className="btn btn-primary" onClick={handlePasswordSubmit}>
+                Preview
+              </button>
+              <button
+                className="btn"
+                style={{ background: 'rgba(255,255,255,0.08)', color: 'var(--text-secondary)' }}
+                onClick={() => setShowPasswordPrompt(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Preview Modal */}
+      <PreviewModal
+        isOpen={!!previewFile}
+        onClose={() => { setPreviewFile(null); setPreviewPassword(''); }}
+        fileHash={previewFile?.file_hash || ''}
+        filename={previewFile?.filename || ''}
+        password={previewPassword}
+      />
     </div>
   )
 }

@@ -35,17 +35,25 @@ function ChatText({ text }) {
     if (match.index > lastIndex) {
       parts.push(<span key={lastIndex}>{text.slice(lastIndex, match.index)}</span>)
     }
-    // Add clickable hash button
+    // Add clickable hash buttons (Preview + Download)
     const hash = match[1]
     parts.push(
-      <button
-        key={match.index}
-        className="chat-hash-link"
-        onClick={() => navigate(`/download?hash=${hash}`)}
-        title={`Download file: ${hash}`}
-      >
-        📦 {hash.slice(0, 12)}...{hash.slice(-8)}
-      </button>
+      <span key={match.index} className="chat-hash-group">
+        <button
+          className="chat-hash-link"
+          onClick={() => navigate(`/download?hash=${hash}`)}
+          title={`Download: ${hash}`}
+        >
+          📦 {hash.slice(0, 12)}...{hash.slice(-8)}
+        </button>
+        <button
+          className="chat-hash-link chat-hash-preview"
+          onClick={() => navigate(`/download?hash=${hash}&preview=1`)}
+          title="Preview this file"
+        >
+          👁️
+        </button>
+      </span>
     )
     lastIndex = match.index + match[0].length
   }

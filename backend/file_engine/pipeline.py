@@ -206,3 +206,58 @@ async def pipeline_merge_to_disk(
         f"(integrity ✅ O(1) memory)"
     )
     return output_path
+
+
+async def pipeline_stream_file(
+    manifest,
+    load_fn,
+    password: str = None,
+):
+    """
+    Phase 20: O(1) memory streaming generator.
+
+    Yields decrypted + decompressed chunks sequentially for
+    StreamingResponse — never buffers the full file in RAM.
+
+    Args:
+        manifest: FileManifest with chunk ordering and compression info.
+        load_fn: async callable(chunk_hash) -> bytes
+        password: Decryption password (None = unencrypted).
+
+    Yields:
+        bytes: Raw plaintext chunk data, in order.
+    """
+    loop = asyncio.get_running_loop()
+    pool = _get_pool()
+
+    ordered = sorted(manifest.chunks, key=lambda c: c.index)
+
+    # Pre-derive the key ONCE if encrypted (avoids PBKDF2 per chunk)
+    dec_key = None
+
+    for i, info in enumerate(ordered):
+        data = await load_fn(info.chunk_hash)
+
+        # Decrypt
+        if info.encrypted and password:
+            if dec_key is None:
+                from backend.file_engine.crypto import derive_key, SALT_SIZE
+                first_salt = data[1:1 + SALT_SIZE]
+                dec_key, _ = derive_key(password, first_salt)
+
+            from backend.file_engine.crypto import (
+                _worker_decrypt_keyed, _worker_decrypt_keyed_nocompress,
+            )
+            if manifest.compression == "zstd":
+                plaintext = await loop.run_in_executor(pool, _worker_decrypt_keyed, data, dec_key)
+            else:
+                plaintext = await loop.run_in_executor(pool, _worker_decrypt_keyed_nocompress, data, dec_key)
+        else:
+            # Unencrypted: may still need decompression
+            if manifest.compression == "zstd":
+                import zstandard as _zstd
+                plaintext = _zstd.ZstdDecompressor().decompress(data)
+            else:
+                plaintext = data
+
+        yield plaintext

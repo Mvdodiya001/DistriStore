@@ -11,7 +11,7 @@ import uuid
 import time
 
 from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 from backend.utils.logger import get_logger
 
@@ -273,6 +273,92 @@ async def download_file(
         path=temp_file,
         media_type="application/octet-stream",
         filename=manifest.original_filename,
+    )
+
+
+@router.get("/preview/{file_hash}")
+async def preview_file(
+    file_hash: str,
+    password: str = "",
+):
+    """
+    Phase 20: Stream a file for in-browser preview (images, videos, PDFs, text).
+    Uses an async generator for O(1) memory — never buffers the full file.
+    Returns Content-Disposition: inline so the browser renders it.
+    """
+    import mimetypes
+    import asyncio
+
+    if not _local_store or not _node:
+        raise HTTPException(503, "Node not initialized")
+
+    from backend.file_engine.chunker import FileManifest
+    from backend.file_engine.pipeline import pipeline_stream_file
+
+    # ── Load manifest (local or from peers) ─────────────────────────
+    manifest_dict = _local_store.load_manifest(file_hash)
+
+    if not manifest_dict:
+        import httpx
+        peers = await _node.state.get_alive_peers()
+        for nid, peer in peers.items():
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.get(f"http://{peer.ip}:{peer.api_port}/manifest/{file_hash}")
+                if resp.status_code == 200:
+                    manifest_dict = resp.json()
+                    _local_store.save_manifest(file_hash, manifest_dict)
+                    break
+            except Exception:
+                continue
+
+    if not manifest_dict:
+        raise HTTPException(404, f"File not found: {file_hash}")
+
+    manifest = FileManifest.from_dict(manifest_dict)
+
+    # ── Check encryption ─────────────────────────────────────────
+    is_encrypted = any(c.encrypted for c in manifest.chunks)
+    pwd = password if password else None
+    if is_encrypted and not pwd:
+        raise HTTPException(400, "This file is encrypted. Provide a password.")
+
+    # ── MIME type detection ───────────────────────────────────────
+    media_type, _ = mimetypes.guess_type(manifest.original_filename)
+    if not media_type:
+        media_type = "application/octet-stream"
+
+    # ── Chunk loader (local + peer fallback) ─────────────────────
+    async def load_chunk(chunk_hash: str) -> bytes:
+        data = _local_store.load_chunk(chunk_hash)
+        if data is not None:
+            return data
+        # Peer fallback
+        import httpx
+        peers = await _node.state.get_alive_peers()
+        for nid, peer in peers.items():
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    resp = await client.get(f"http://{peer.ip}:{peer.api_port}/chunk/{chunk_hash}")
+                if resp.status_code == 200:
+                    _local_store.save_chunk(chunk_hash, resp.content)
+                    return resp.content
+            except Exception:
+                continue
+        raise HTTPException(404, f"Chunk {chunk_hash[:16]}... not found")
+
+    logger.info(
+        f"Streaming preview '{manifest.original_filename}' "
+        f"({manifest.original_size} bytes, {media_type}) [O(1) memory]"
+    )
+
+    return StreamingResponse(
+        pipeline_stream_file(manifest, load_chunk, password=pwd),
+        media_type=media_type,
+        headers={
+            "Content-Disposition": f'inline; filename="{manifest.original_filename}"',
+            "Content-Length": str(manifest.original_size),
+        },
     )
 
 
