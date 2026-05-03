@@ -64,6 +64,9 @@ async def lifespan(app):
     # Set the API port on node state so HELLO broadcasts include it
     config = get_config()
     _node.state.api_port = int(os.environ.get("DS_API_PORT", config.api.port))
+    # Phase 16: Wire SQLite persistence into NodeState
+    _node.state.set_database(_store.db)
+    await _node.state.load_peers_from_db()
     await _node.start(_store)
     logger.info("DistriStore node started alongside API server")
     yield

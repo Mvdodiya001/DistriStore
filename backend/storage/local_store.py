@@ -1,14 +1,15 @@
 """
 DistriStore — Local Chunk Storage
-Simple disk I/O for storing and retrieving chunk files.
+Disk I/O for chunk files + SQLite-backed manifest persistence.
 """
 
 import os
 import json
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 
 from backend.file_engine.crypto import sha256_hash
+from backend.storage.db import NodeDatabase
 from backend.utils.logger import get_logger
 
 logger = get_logger("storage.local_store")
@@ -22,6 +23,7 @@ class LocalStore:
     def __init__(self, storage_dir: str = DEFAULT_STORAGE_DIR):
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
+        self.db = NodeDatabase(storage_dir)
         logger.info(f"LocalStore initialized at {self.storage_dir.resolve()}")
 
     def save_chunk(self, chunk_hash: str, data: bytes) -> str:
@@ -68,19 +70,18 @@ class LocalStore:
         return hashes
 
     def save_manifest(self, file_hash: str, manifest_dict: dict) -> str:
-        """Save a file manifest to disk."""
-        filename = f"manifest_{file_hash}.json"
-        filepath = self.storage_dir / filename
-        filepath.write_text(json.dumps(manifest_dict, indent=2))
+        """Save a file manifest to SQLite (Phase 16)."""
+        self.db._save_manifest_sync(file_hash, manifest_dict)
         logger.debug(f"Saved manifest {file_hash[:12]}...")
-        return str(filepath)
+        return file_hash
 
     def load_manifest(self, file_hash: str) -> Optional[dict]:
-        """Load a file manifest from disk."""
-        filepath = self.storage_dir / f"manifest_{file_hash}.json"
-        if not filepath.exists():
-            return None
-        return json.loads(filepath.read_text())
+        """Load a file manifest from SQLite (Phase 16)."""
+        return self.db._get_manifest_sync(file_hash)
+
+    def get_all_manifests(self) -> List[dict]:
+        """Return all stored manifests from SQLite."""
+        return self.db._get_all_manifests_sync()
 
     def get_storage_size(self) -> int:
         """Total bytes used by stored chunks."""

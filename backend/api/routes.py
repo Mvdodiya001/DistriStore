@@ -242,12 +242,10 @@ async def list_files(local_only: bool = False):
     import json
     import httpx
 
-    # Local files
+    # Local files (Phase 16: from SQLite)
     manifests = []
     seen_hashes = set()
-    storage_path = _local_store.storage_dir
-    for f in storage_path.glob("manifest_*.json"):
-        data = json.loads(f.read_text())
+    for data in _local_store.get_all_manifests():
         fh = data.get("file_hash")
         seen_hashes.add(fh)
         manifests.append({

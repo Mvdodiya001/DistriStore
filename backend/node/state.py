@@ -57,7 +57,36 @@ class NodeState:
         self._routing: Dict[str, list] = {}
         self._routing_lock: asyncio.Lock = asyncio.Lock()
 
+        # SQLite persistence (Phase 16) — set via set_database()
+        self._db = None
+
         logger.info(f"NodeState initialized: id={self.node_id[:12]}... name={self.name}")
+
+    def set_database(self, db) -> None:
+        """Attach a NodeDatabase instance for persistent peer storage."""
+        self._db = db
+
+    async def load_peers_from_db(self) -> None:
+        """Load historical peers from SQLite into the in-memory peer table."""
+        if not self._db:
+            return
+        rows = await self._db.get_all_peers()
+        async with self._peers_lock:
+            for row in rows:
+                nid = row["node_id"]
+                if nid == self.node_id:
+                    continue  # skip self
+                self._peers[nid] = PeerInfo(
+                    node_id=nid,
+                    ip=row["ip"],
+                    tcp_port=row["tcp_port"],
+                    name=row.get("name", ""),
+                    api_port=row.get("api_port", 8888),
+                    health_score=row.get("health_score", 0.0),
+                    last_seen=row.get("last_seen", 0),
+                )
+        if rows:
+            logger.info(f"Loaded {len(rows)} historical peers from SQLite")
 
     # ── Peer management ────────────────────────────────────────────
 
@@ -80,11 +109,26 @@ class NodeState:
                 if peer.api_port:
                     existing.api_port = peer.api_port
                 logger.debug(f"Updated peer {peer.node_id[:12]}... ({peer.ip})")
+                # Persist to SQLite
+                if self._db:
+                    await self._db.upsert_peer(
+                        node_id=existing.node_id, ip=existing.ip,
+                        tcp_port=existing.tcp_port, api_port=existing.api_port,
+                        name=existing.name, health_score=existing.health_score,
+                        last_seen=existing.last_seen,
+                    )
             else:
                 peer.last_seen = time.time()
                 self._peers[peer.node_id] = peer
                 logger.info(f"New peer discovered: {peer.node_id[:12]}... ({peer.ip}:{peer.tcp_port})")
-
+                # Persist to SQLite
+                if self._db:
+                    await self._db.upsert_peer(
+                        node_id=peer.node_id, ip=peer.ip,
+                        tcp_port=peer.tcp_port, api_port=peer.api_port,
+                        name=peer.name, health_score=peer.health_score,
+                        last_seen=peer.last_seen,
+                    )
     async def remove_peer(self, node_id: str) -> Optional[PeerInfo]:
         """Remove a peer by node_id."""
         async with self._peers_lock:
