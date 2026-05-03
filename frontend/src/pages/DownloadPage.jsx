@@ -1,17 +1,31 @@
 /**
  * DownloadPage — Download or Preview file by hash with decryption support.
+ * Phase 21: Adds resumable downloads with inline progress, pause/resume controls.
  * Reads prefilled hash from URL query params (from dashboard file list clicks).
  */
 
 import { useState, useEffect } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import { Download, Lock, Eye } from 'lucide-react'
-import { downloadFile, triggerBlobDownload } from '../api/client'
+import { Download, Lock, Eye, Play, Pause, RefreshCw, CheckCircle, AlertCircle, Loader } from 'lucide-react'
+import {
+  downloadFile, triggerBlobDownload,
+  startResumableDownload, pauseDownload, resumeDownload,
+  fetchDownloadProgress,
+} from '../api/client'
+import useNetworkStore from '../store/useNetworkStore'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
-import PreviewModal, { isPreviewable } from '../components/ui/PreviewModal'
+import PreviewModal from '../components/ui/PreviewModal'
+import ActiveDownloads from '../components/network/ActiveDownloads'
 
 const API_BASE = import.meta.env.VITE_API_URL || `http://${window.location.hostname}:8888`
+
+function formatBytes(bytes) {
+  if (!bytes) return '0 B'
+  const k = 1024, sizes = ['B', 'KB', 'MB', 'GB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i]
+}
 
 export default function DownloadPage() {
   const [searchParams] = useSearchParams()
@@ -25,12 +39,21 @@ export default function DownloadPage() {
   const [showPreview, setShowPreview] = useState(false)
   const [previewFilename, setPreviewFilename] = useState('')
 
+  // Phase 21: Resumable download state
+  const [starting, setStarting] = useState(false)
+  const [resumableInfo, setResumableInfo] = useState(null)
+  const activeDownloads = useNetworkStore((s) => s.activeDownloads)
+
+  // Track the current hash's download if it exists
+  const currentDl = hash ? (activeDownloads || {})[hash] : null
+
   // Prefill hash from URL params (e.g., /download?hash=abc123)
   useEffect(() => {
     const h = searchParams.get('hash')
     if (h) setHash(h)
   }, [searchParams])
 
+  // ── Instant download (original) ──────────────────────────────
   const handleDownload = async () => {
     if (!hash) return
     setDownloading(true); setError(null); setSuccess(false)
@@ -45,11 +68,44 @@ export default function DownloadPage() {
     }
   }
 
+  // ── Start resumable download (Phase 21) ──────────────────────
+  const handleStartResumable = async () => {
+    if (!hash) return
+    setStarting(true); setError(null); setSuccess(false)
+    try {
+      const result = await startResumableDownload(hash, password)
+      setResumableInfo(result.download)
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setStarting(false)
+    }
+  }
+
+  const handlePause = async () => {
+    if (!hash) return
+    setError(null)
+    try {
+      await pauseDownload(hash)
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  const handleResume = async () => {
+    if (!hash) return
+    setError(null)
+    try {
+      await resumeDownload(hash, password)
+    } catch (err) {
+      setError(err.message)
+    }
+  }
+
+  // ── Preview (Phase 20) ───────────────────────────────────────
   const handlePreview = async () => {
     if (!hash) return
     setError(null)
-
-    // Try to get the filename from the manifest for MIME detection
     try {
       const resp = await fetch(`${API_BASE}/manifest/${hash}`)
       if (resp.ok) {
@@ -61,7 +117,6 @@ export default function DownloadPage() {
     } catch {
       setPreviewFilename('file.bin')
     }
-
     setShowPreview(true)
   }
 
@@ -79,16 +134,93 @@ export default function DownloadPage() {
           </div>
           <div className="download-actions">
             <Button variant="success" loading={downloading} disabled={!hash} onClick={handleDownload}>
-              ⬇️ Download File
+              ⬇️ Instant Download
+            </Button>
+            <Button variant="primary" loading={starting} disabled={!hash} onClick={handleStartResumable}>
+              🔄 Resumable Download
             </Button>
             <Button variant="primary" disabled={!hash} onClick={handlePreview}>
-              👁️ Preview in Browser
+              👁️ Preview
             </Button>
           </div>
+
+          {/* Phase 21: Inline progress for current hash */}
+          {currentDl && (
+            <div className="download-inline-progress">
+              <div className="download-item" style={{ marginTop: '16px' }}>
+                <div className="download-item-header">
+                  <div className="download-item-info">
+                    {currentDl.status === 'downloading' && <Loader size={16} className="spin-slow" style={{ color: 'var(--accent-cyan)', flexShrink: 0 }} />}
+                    {currentDl.status === 'paused' && <Pause size={16} style={{ color: 'var(--accent-amber)', flexShrink: 0 }} />}
+                    {currentDl.status === 'completed' && <CheckCircle size={16} style={{ color: 'var(--accent-green)', flexShrink: 0 }} />}
+                    {currentDl.status === 'error' && <AlertCircle size={16} style={{ color: 'var(--accent-rose)', flexShrink: 0 }} />}
+                    <span className="download-filename">{currentDl.filename}</span>
+                    <span
+                      className="download-status-badge"
+                      style={{
+                        background:
+                          currentDl.status === 'downloading' ? 'rgba(6,182,212,0.15)' :
+                          currentDl.status === 'paused' ? 'rgba(245,158,11,0.15)' :
+                          currentDl.status === 'completed' ? 'rgba(16,185,129,0.15)' :
+                          'rgba(244,63,94,0.15)',
+                        color:
+                          currentDl.status === 'downloading' ? 'var(--accent-cyan)' :
+                          currentDl.status === 'paused' ? 'var(--accent-amber)' :
+                          currentDl.status === 'completed' ? 'var(--accent-green)' :
+                          'var(--accent-rose)',
+                      }}
+                    >
+                      {currentDl.status}
+                    </span>
+                  </div>
+
+                  <div className="download-item-actions">
+                    {currentDl.status === 'downloading' && (
+                      <button className="download-ctrl-btn download-pause-btn" onClick={handlePause}>
+                        <Pause size={14} /> Pause
+                      </button>
+                    )}
+                    {currentDl.status === 'paused' && (
+                      <button className="download-ctrl-btn download-resume-btn" onClick={handleResume}>
+                        <Play size={14} /> Resume
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="download-progress-track">
+                  <div
+                    className="download-progress-fill"
+                    style={{
+                      width: `${currentDl.progress || 0}%`,
+                      background:
+                        currentDl.status === 'error' ? 'var(--accent-rose)' :
+                        currentDl.status === 'completed' ? 'var(--accent-green)' :
+                        'var(--gradient-primary)',
+                    }}
+                  />
+                </div>
+
+                <div className="download-stats">
+                  <span>{currentDl.downloaded_chunks} / {currentDl.total_chunks} chunks</span>
+                  <span>{formatBytes(currentDl.total_size)}</span>
+                  <span className="download-progress-pct">{currentDl.progress}%</span>
+                </div>
+
+                {currentDl.error_message && (
+                  <div className="download-error">{currentDl.error_message}</div>
+                )}
+              </div>
+            </div>
+          )}
+
           {success && <div className="alert alert-success">✅ Downloaded successfully!</div>}
           {error && <div className="alert alert-error">❌ {error}</div>}
         </div>
       </Card>
+
+      {/* Phase 21: All active downloads */}
+      <ActiveDownloads />
 
       {/* Phase 20: Preview Modal */}
       <PreviewModal
