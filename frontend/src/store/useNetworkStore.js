@@ -106,6 +106,66 @@ const useNetworkStore = create((set, get) => ({
     const { status } = get()
     return status?.storage_used || 0
   },
+
+  // ── Chat (Phase 19) ─────────────────────────────────────────
+  messages: [],
+  chatWs: null,
+  chatConnected: false,
+
+  connectChat: () => {
+    const { chatWs } = get()
+    if (chatWs) return // Already connected
+
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws'
+    const host = window.location.hostname
+    const port = import.meta.env.VITE_API_PORT || '8888'
+    const wsUrl = `${protocol}://${host}:${port}/ws/chat`
+
+    const ws = new WebSocket(wsUrl)
+
+    ws.onopen = () => {
+      set({ chatConnected: true })
+      console.log('[Chat] WebSocket connected')
+    }
+
+    ws.onmessage = (event) => {
+      try {
+        const msg = JSON.parse(event.data)
+        set((state) => ({
+          messages: [...state.messages.slice(-199), msg], // Keep last 200
+        }))
+      } catch (e) {
+        console.warn('[Chat] Bad message:', e)
+      }
+    }
+
+    ws.onclose = () => {
+      set({ chatConnected: false, chatWs: null })
+      console.log('[Chat] WebSocket disconnected, reconnecting in 3s...')
+      setTimeout(() => get().connectChat(), 3000)
+    }
+
+    ws.onerror = (err) => {
+      console.warn('[Chat] WebSocket error:', err)
+      ws.close()
+    }
+
+    set({ chatWs: ws })
+  },
+
+  sendMessage: (text) => {
+    const { chatWs, chatConnected } = get()
+    if (!chatWs || !chatConnected || !text.trim()) return
+    chatWs.send(JSON.stringify({ text: text.trim() }))
+  },
+
+  disconnectChat: () => {
+    const { chatWs } = get()
+    if (chatWs) {
+      chatWs.close()
+      set({ chatWs: null, chatConnected: false })
+    }
+  },
 }))
 
 export default useNetworkStore

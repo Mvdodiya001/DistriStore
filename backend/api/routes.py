@@ -1,6 +1,6 @@
 """
 DistriStore — FastAPI Routes
-REST endpoints for upload, download, and status.
+REST endpoints for upload, download, status, and WebSocket chat.
 """
 
 import os
@@ -8,8 +8,9 @@ import tempfile
 from typing import Optional
 
 import uuid
+import time
 
-from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, Form, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 
 from backend.utils.logger import get_logger
@@ -30,6 +31,41 @@ def init_routes(node, local_store, routing):
     _node = node
     _local_store = local_store
     _routing = routing
+
+
+# ── Phase 19: WebSocket Chat Manager ─────────────────────────────────
+
+class ChatManager:
+    """Manages active WebSocket connections for swarm chat."""
+
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, ws: WebSocket):
+        await ws.accept()
+        self.active_connections.append(ws)
+        logger.info(f"WebSocket chat connected ({len(self.active_connections)} total)")
+
+    def disconnect(self, ws: WebSocket):
+        self.active_connections.remove(ws)
+        logger.info(f"WebSocket chat disconnected ({len(self.active_connections)} total)")
+
+    async def broadcast(self, message: dict):
+        """Send a message dict to all connected WebSocket clients."""
+        dead = []
+        for ws in self.active_connections:
+            try:
+                await ws.send_json(message)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            try:
+                self.active_connections.remove(ws)
+            except ValueError:
+                pass
+
+
+chat_manager = ChatManager()
 
 
 @router.get("/status")
@@ -318,3 +354,91 @@ async def get_chunk(chunk_hash: str):
         media_type="application/octet-stream",
         headers={"X-Chunk-Hash": chunk_hash},
     )
+
+
+# ── Phase 19: WebSocket Chat ─────────────────────────────────────────
+
+# Track seen message IDs to prevent echo loops in gossip
+_seen_chat_ids: set = set()
+_MAX_SEEN = 500
+
+
+@router.websocket("/ws/chat")
+async def websocket_chat(ws: WebSocket):
+    """
+    WebSocket bridge for swarm chat.
+    - Receives messages from the local user → broadcasts to local WS + TCP peers.
+    - TCP peer messages are routed here via handle_tcp_chat().
+    """
+    await chat_manager.connect(ws)
+    try:
+        while True:
+            data = await ws.receive_json()
+            text = data.get("text", "").strip()
+            if not text or not _node:
+                continue
+
+            # Build chat message
+            from backend.network.protocol import chat_msg
+            msg_id = uuid.uuid4().hex[:12]
+            msg = chat_msg(_node.state.node_id, _node.state.name, text)
+            msg["msg_id"] = msg_id
+
+            # Track this message so we don't echo it back from TCP
+            _seen_chat_ids.add(msg_id)
+            if len(_seen_chat_ids) > _MAX_SEEN:
+                # Evict oldest (sets aren't ordered, but this prevents unbounded growth)
+                _seen_chat_ids.pop()
+
+            # 1. Broadcast to all local WebSocket clients (including sender)
+            ws_payload = {
+                "msg_id": msg_id,
+                "sender_id": _node.state.node_id,
+                "sender_name": _node.state.name,
+                "text": text,
+                "timestamp": msg["timestamp"],
+                "source": "local",
+            }
+            await chat_manager.broadcast(ws_payload)
+
+            # 2. Propagate to TCP swarm peers
+            msg["msg_id"] = msg_id
+            await _node.conn_mgr.broadcast_to_peers(msg)
+
+    except WebSocketDisconnect:
+        chat_manager.disconnect(ws)
+    except Exception as e:
+        logger.debug(f"WebSocket chat error: {e}")
+        try:
+            chat_manager.disconnect(ws)
+        except ValueError:
+            pass
+
+
+async def handle_tcp_chat(msg: dict):
+    """
+    Called by the TCP message handler when a CHAT message arrives from a peer.
+    Routes it to all local WebSocket clients.
+    """
+    msg_id = msg.get("msg_id", "")
+
+    # Deduplicate: don't re-broadcast messages we've already seen
+    if msg_id in _seen_chat_ids:
+        return
+    _seen_chat_ids.add(msg_id)
+    if len(_seen_chat_ids) > _MAX_SEEN:
+        _seen_chat_ids.pop()
+
+    ws_payload = {
+        "msg_id": msg_id,
+        "sender_id": msg.get("sender_id", ""),
+        "sender_name": msg.get("sender_name", "unknown"),
+        "text": msg.get("text", ""),
+        "timestamp": msg.get("timestamp", time.time()),
+        "source": "peer",
+    }
+    await chat_manager.broadcast(ws_payload)
+
+    # Gossip: re-broadcast to our TCP peers (flood protocol)
+    if _node:
+        await _node.conn_mgr.broadcast_to_peers(msg)

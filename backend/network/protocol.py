@@ -25,6 +25,7 @@ MSG_FIND_RESULT   = "FIND_RESULT"
 MSG_PING          = "PING"
 MSG_PONG          = "PONG"
 MSG_STATUS        = "STATUS"
+MSG_CHAT          = "CHAT"           # Phase 19: P2P swarm chat
 
 
 def build_message(msg_type: str, sender_id: str, **kwargs) -> dict:
@@ -89,3 +90,8 @@ def pong_msg(sender_id: str, uptime: float, free_space: int) -> dict:
 def chunk_ack_msg(sender_id: str, chunk_hash: str, index: int) -> dict:
     """Build a CHUNK_ACK message for sliding window acknowledgment."""
     return build_message(MSG_CHUNK_ACK, sender_id, chunk_hash=chunk_hash, index=index)
+
+
+def chat_msg(sender_id: str, sender_name: str, text: str) -> dict:
+    """Build a CHAT message for P2P swarm chat (Phase 19)."""
+    return build_message(MSG_CHAT, sender_id, sender_name=sender_name, text=text)

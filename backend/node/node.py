@@ -26,9 +26,23 @@ class DistriNode:
             node_id=self.config.node.node_id,
             name=self.config.node.name,
         )
-        self.conn_mgr = ConnectionManager(self.state)
+        self.conn_mgr = ConnectionManager(self.state, message_handler=self._handle_message)
         self._discovery_protocol = None
         self._tasks: list[asyncio.Task] = []
+
+    async def _handle_message(self, conn, msg: dict) -> None:
+        """Route incoming TCP messages to the appropriate handler."""
+        msg_type = msg.get("type", "")
+
+        if msg_type == "CHAT":
+            # Phase 19: Route chat messages to WebSocket bridge
+            from backend.api.routes import handle_tcp_chat
+            await handle_tcp_chat(msg)
+        elif msg_type in ("STORE_CHUNK", "GET_CHUNK", "CHUNK_ACK", "STORE_ACK",
+                          "CHUNK_DATA", "FIND_NODE", "FIND_RESULT", "PING", "PONG"):
+            logger.debug(f"TCP msg from {conn.peer_id[:12]}...: {msg_type}")
+        else:
+            logger.debug(f"Unknown TCP msg type: {msg_type}")
 
     async def start(self, local_store=None) -> None:
         """Boot the node: TCP server + UDP discovery + peer connector."""

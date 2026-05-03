@@ -21,6 +21,7 @@ import DashboardPage from './pages/DashboardPage'
 import UploadPage from './pages/UploadPage'
 import DownloadPage from './pages/DownloadPage'
 import SettingsPage from './pages/SettingsPage'
+import ChatDrawer from './components/network/ChatDrawer'
 
 function AppShell() {
   const startPolling = useNetworkStore((s) => s.startPolling)
@@ -45,6 +46,7 @@ function AppShell() {
           </Routes>
         </main>
       </div>
+      <ChatDrawer />
     </div>
   )
 }
