@@ -1,6 +1,6 @@
 """
 DistriStore — Network Protocol
-JSON message schemas for P2P communication.
+Binary message schemas for P2P communication (Phase 17: msgpack native bytes).
 """
 
 import time
@@ -46,13 +46,13 @@ def auth_handshake_msg(node_id: str, swarm_key: str) -> dict:
     return {"type": "AUTH", "node_id": node_id, "signature": sig}
 
 
-def store_chunk_msg(sender_id: str, chunk_hash: str, chunk_data_b64: str,
+def store_chunk_msg(sender_id: str, chunk_hash: str, chunk_data: bytes,
                     file_hash: str = "") -> dict:
-    """Build a STORE_CHUNK message."""
+    """Build a STORE_CHUNK message with raw binary chunk data."""
     return build_message(
         MSG_STORE_CHUNK, sender_id,
         chunk_hash=chunk_hash,
-        chunk_data=chunk_data_b64,
+        chunk_data=chunk_data,
         file_hash=file_hash,
     )
 
@@ -65,8 +65,9 @@ def get_chunk_msg(sender_id: str, chunk_hash: str) -> dict:
     return build_message(MSG_GET_CHUNK, sender_id, chunk_hash=chunk_hash)
 
 
-def chunk_data_msg(sender_id: str, chunk_hash: str, chunk_data_b64: str) -> dict:
-    return build_message(MSG_CHUNK_DATA, sender_id, chunk_hash=chunk_hash, chunk_data=chunk_data_b64)
+def chunk_data_msg(sender_id: str, chunk_hash: str, chunk_data: bytes) -> dict:
+    """Build a CHUNK_DATA response with raw binary chunk data."""
+    return build_message(MSG_CHUNK_DATA, sender_id, chunk_hash=chunk_hash, chunk_data=chunk_data)
 
 
 def find_node_msg(sender_id: str, target_hash: str) -> dict:

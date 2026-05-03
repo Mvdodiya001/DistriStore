@@ -7,10 +7,15 @@ Usage:
     python -m backend.main --name node-beta --tcp-port 50003 --api-port 8001
 """
 
-import argparse
 import asyncio
 import sys
 import os
+
+# Phase 17: Windows asyncio tuning — use IOCP for native speed
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
+import argparse
 from contextlib import asynccontextmanager
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

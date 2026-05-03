@@ -13,3 +13,7 @@ httpx>=0.25.0
 
 # Phase 2R: Health-scored discovery
 psutil>=5.9.0
+
+# Phase 17: Binary protocol & fast serialization
+msgpack>=1.0.8
+orjson>=3.9.0

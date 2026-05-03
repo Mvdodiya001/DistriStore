@@ -2,7 +2,41 @@
 
 All notable changes to this project will be documented in this file.
 
-## [1.0.0] - Initial Release
+## [2.0.0] - 2026-05-03
+
+### Added — Storage Quotas & LRU Eviction (Phase 14)
+- Configurable `max_storage_mb` quota (default 5 GB) to prevent disk exhaustion.
+- Background garbage collector (`backend/advanced/garbage_collector.py`) runs a 60-second async loop.
+- LRU eviction via `os.path.getatime()` — oldest-accessed chunks freed first.
+- `/status` now reports `storage_used_mb` and `storage_max_mb`.
+
+### Added — Zero-Trust Swarm Authentication (Phase 15)
+- HMAC-SHA256 Pre-Shared Key (`swarm_key`) for both UDP and TCP.
+- UDP broadcasts wrapped as `{"payload": ..., "signature": "<hmac_hex>"}` — unsigned packets silently dropped.
+- TCP connections require an `AUTH` message within 2 seconds — invalid/missing auth closes the socket immediately.
+- `/status` exposes `swarm_auth_active: true`.
+- Frontend Settings page shows "Swarm PSK: Active" security badge.
+
+### Added — SQLite Persistence (Phase 16)
+- `NodeDatabase` class (`backend/storage/db.py`) replaces flat JSON manifest files with a persistent SQLite database.
+- Tables: `peers` (routing table) and `manifests` (file metadata + chunk lists).
+- Historical peers loaded from SQLite on boot — instant startup, no cold discovery.
+- All database writes use `asyncio.to_thread()` with WAL journal mode for non-blocking concurrent access.
+
+### Changed — Cross-Platform Binary Protocol (Phase 17)
+- **TCP pipeline**: Replaced JSON serialization with `msgpack` binary protocol using 4-byte length-prefixed framing.
+- **Base64 eliminated**: Chunk data sent as raw `bytes` via msgpack — ~33% bandwidth savings.
+- **UDP metadata**: Switched from stdlib `json` to `orjson` (3-10x faster serialization).
+- **Windows tuning**: Added `WindowsProactorEventLoopPolicy` for native IOCP async performance.
+- New dependencies: `msgpack>=1.0.8`, `orjson>=3.9.0`.
+
+### Changed
+- Storage quota increased from 1 GB to 5 GB default to support large file uploads.
+- Test suite updated to use HMAC-signed discovery packets.
+
+---
+
+## [1.0.0] - 2026-05-02
 
 ### Features
 - **Security**: AES-256-GCM authenticated encryption and Merkle Tree content addressing for tamper-proof chunking.

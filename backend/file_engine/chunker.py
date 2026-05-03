@@ -40,7 +40,7 @@ def get_optimal_chunk_size(file_size_bytes: int) -> int:
 
     Tiers:
       - < 50 MB  → 256 KB  (fine-grained, fast for small files)
-      - 50–500 MB → 1 MB   (balanced throughput / chunk count)
+      - 50-500 MB → 1 MB   (balanced throughput / chunk count)
       - > 500 MB → 4 MB    (minimizes chunk overhead on large files)
     """
     if file_size_bytes < _TIER_50MB:

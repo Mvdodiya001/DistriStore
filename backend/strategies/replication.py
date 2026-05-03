@@ -4,7 +4,6 @@ Selects top-k peers and sends chunks to them over TCP.
 """
 
 import asyncio
-import base64
 from typing import List, Optional
 
 from backend.node.state import NodeState
@@ -115,8 +114,7 @@ class ReplicationEngine:
                 return False
 
         try:
-            data_b64 = base64.b64encode(data).decode()
-            msg = store_chunk_msg(self.state.node_id, info.chunk_hash, data_b64, file_hash)
+            msg = store_chunk_msg(self.state.node_id, info.chunk_hash, data, file_hash)
             await conn.send(msg)
             logger.debug(f"Sent chunk {info.chunk_hash[:12]}... to {peer_id[:12]}...")
             return True

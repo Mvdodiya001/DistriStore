@@ -4,7 +4,7 @@
 
 ### **A LAN-Optimized, Trackerless P2P Distributed Storage Framework**
 
-*Encrypted. Content-addressed. Swarmed. Self-healing.*
+*Encrypted. Content-addressed. Swarmed. Self-healing. Zero-trust.*
 
 <br/>
 
@@ -61,6 +61,7 @@ Files are split, encrypted, and replicated across the network. Any node can serv
 | **Verifiable at every level** | Merkle manifests with per-chunk SHA-256 proofs. Corruption is detected before data ever reaches the user. |
 | **Built for throughput** | Streaming O(N) pipeline, `ProcessPoolExecutor` parallelism, and `asyncio.gather` swarmed downloads. 100 MB round-trips in **0.67 s**. |
 | **Truly cross-node** | Upload on Node A, download from Node B by hash. The network resolves the rest. |
+| **Zero-trust authentication** | HMAC-SHA256 pre-shared key on every UDP broadcast and TCP connection. Unauthorized peers are silently rejected. |
 | **Production-grade UI** | A real React 19 + Vite dashboard — sidebar nav, live charts, sortable peer tables, dark-mode design tokens — not a debug page. |
 
 ---
@@ -76,6 +77,7 @@ Files are split, encrypted, and replicated across the network. Any node can serv
 - **PBKDF2-HMAC-SHA256** key derivation
 - **Merkle tree** content addressing
 - **Per-chunk proofs** for partial verification
+- **HMAC-SHA256 swarm authentication** (UDP + TCP)
 - Automatic tamper rejection
 
 </td>
@@ -88,6 +90,8 @@ Files are split, encrypted, and replicated across the network. Any node can serv
 - **Dynamic chunk sizing**: 256KB / 1MB / 4MB auto-selected
 - **O(1)** memory-stable downloads via `FileResponse`
 - **Async disk I/O** via `asyncio.to_thread`
+- **msgpack binary protocol** — ~33% less TCP overhead
+- **orjson** fast UDP metadata serialization
 
 </td>
 </tr>
@@ -112,6 +116,8 @@ Files are split, encrypted, and replicated across the network. Any node can serv
 - **XOR-distance** Kademlia routing
 - Cross-node manifest + chunk fetch
 - **8MB TCP stream limit** for 4MB chunk support
+- **SQLite persistence** — crash-safe manifests + peer routing
+- **LRU eviction** — configurable storage quotas (5GB default)
 
 </td>
 </tr>
@@ -202,9 +208,9 @@ distristore/
 │   │   ├── routing.py                XOR distance + routing table
 │   │   └── lookup.py                 Peer search / lookup
 │   ├── network/
-│   │   ├── discovery.py              UDP broadcast + health scoring
-│   │   ├── protocol.py               JSON message schemas
-│   │   └── connection.py             Async TCP connection manager
+│   │   ├── discovery.py              UDP broadcast + HMAC auth + orjson
+│   │   ├── protocol.py               msgpack binary message schemas
+│   │   └── connection.py             Length-prefixed msgpack TCP framing
 │   ├── file_engine/
 │   │   ├── crypto.py                 AES-256-GCM + ProcessPoolExecutor
 │   │   ├── chunker.py                O(1) generator chunking + O(N) merger
@@ -212,11 +218,15 @@ distristore/
 │   ├── framework/client.py           Python SDK + async swarmed downloads
 │   ├── strategies/
 │   │   ├── selector.py               Heuristic peer scoring
-│   │   └── replication.py            k-copy replication
+│   │   ├── replication.py            k-copy replication (raw bytes)
+│   │   └── sliding_window.py         Sliding window + selective retransmit
 │   ├── advanced/
 │   │   ├── heartbeat.py              Peer liveness monitoring
-│   │   └── self_healing.py           Auto chunk re-replication
-│   ├── storage/local_store.py        Disk I/O for chunks + manifests
+│   │   ├── self_healing.py           Auto chunk re-replication
+│   │   └── garbage_collector.py      LRU eviction + storage quota
+│   ├── storage/
+│   │   ├── local_store.py           Chunk disk I/O + SQLite manifest wrapper
+│   │   └── db.py                    NodeDatabase (SQLite + WAL + async)
 │   └── benchmark/benchmark.py        10-size throughput suite
 ├── frontend/                         Enterprise React + Vite dashboard
 │   └── src/
@@ -258,6 +268,10 @@ distristore/
 | **Enterprise Frontend** | Sidebar nav, URL routing, Zustand state, Recharts, lucide-react |
 | **Copy-Hash UX** | One-click copy hash + quick download from file list |
 | **Cross-Platform** | Windows + Linux/macOS — platform-independent APIs throughout |
+| **Storage Quotas** | Configurable `max_storage_mb` with LRU garbage collection |
+| **SQLite Persistence** | Manifests + peer routing survive restarts — instant boot |
+| **Binary Protocol** | `msgpack` TCP framing eliminates base64 — ~33% bandwidth savings |
+| **Swarm Auth (PSK)** | HMAC-SHA256 on every UDP broadcast and TCP connection |
 
 ---
 
@@ -321,10 +335,12 @@ network:
   tcp_port: 50001            # TCP peer-to-peer port
   discovery_interval: 5      # HELLO broadcast interval (seconds)
   peer_timeout: 15           # Peer considered dead after (seconds)
+  swarm_key: "default_distristore_secret"  # HMAC-SHA256 PSK
 
 storage:
   chunk_dir: ".storage"
   chunk_size: 262144         # 256 KB per chunk
+  max_storage_mb: 5120       # Storage quota (5 GB)
 
 replication:
   factor: 3                  # k-copy replication
@@ -377,10 +393,11 @@ python -m backend.benchmark.benchmark
 | **Backend** | Python 3.11 · FastAPI · asyncio · uvicorn |
 | **Crypto** | PyCryptodome (AES-256-GCM) · PBKDF2-HMAC-SHA256 |
 | **Parallelism** | `ProcessPoolExecutor` (GIL bypass) · `asyncio.gather` |
-| **Discovery** | UDP broadcast + TCP handshake fallback · `psutil` health metrics |
+| **Discovery** | UDP broadcast + TCP handshake fallback · `psutil` health metrics · HMAC-SHA256 swarm auth |
 | **Cross-Node** | `httpx` async client for peer manifest/chunk fetching |
+| **Serialization** | `msgpack` (TCP binary) · `orjson` (UDP fast JSON) |
 | **Frontend** | React 19 · Vite 8 · React Router · Zustand · Recharts · lucide-react |
-| **Storage** | Local filesystem · JSON manifests · `FileResponse` streaming |
+| **Storage** | Local filesystem · SQLite (WAL mode) · `FileResponse` streaming |
 | **Platforms** | Windows + Linux/macOS — cross-platform APIs throughout |
 | **DevOps** | Native setup/start scripts (`setup.sh/.bat`, `start.sh/.bat`) |
 

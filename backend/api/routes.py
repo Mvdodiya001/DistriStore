@@ -3,7 +3,6 @@ DistriStore — FastAPI Routes
 REST endpoints for upload, download, and status.
 """
 
-import base64
 import os
 import tempfile
 from typing import Optional

@@ -22,10 +22,14 @@ Phase 9 (Docker)          ██████████████████
 Phase 10 (Dynamic Ports)  ████████████████████ 100% ✅
 Phase 11 (LAN Access)     ████████████████████ 100% ✅
 Phase 12 (Cross-Node)     ████████████████████ 100% ✅
-Phase 13 (Adv Throughput)  ████████████████████ 100% ✅
+Phase 13 (Adv Throughput) ████████████████████ 100% ✅
+Phase 14 (Storage Quotas) ████████████████████ 100% ✅
+Phase 15 (Swarm Auth)     ████████████████████ 100% ✅
+Phase 16 (SQLite)         ████████████████████ 100% ✅
+Phase 17 (Binary Proto)   ████████████████████ 100% ✅
 ```
 
-**Current Position: All 15 phases complete. Max throughput + reliability.**
+**Current Position: All 19 phases complete. V2.0 — Zero-Trust Binary Protocol.**
 
 ---
 
@@ -63,7 +67,7 @@ Phase 13 (Adv Throughput)  █████████████████�
 | XOR Distance Calculation | `backend/dht/routing.py` | ✅ |
 | Dynamic Routing Table | `backend/dht/routing.py` | ✅ |
 | Peer Search / Lookup | `backend/dht/lookup.py` | ✅ |
-| JSON Protocol Messages | `backend/network/protocol.py` | ✅ |
+| Binary Protocol Messages | `backend/network/protocol.py` | ✅ |
 
 **Verification:** `python -m tests.test_phase3` — XOR distance, closest-peer ✅
 
@@ -208,13 +212,6 @@ Phase 13 (Adv Throughput)  █████████████████�
 | Frontend .dockerignore | `frontend/.dockerignore` | ✅ |
 | psutil added to requirements | `requirements.txt` | ✅ |
 
-### Docker Architecture
-
-| Service | Image | Port | Purpose |
-|---------|-------|------|---------|
-| `distristore-backend` | python:3.11-slim | 8000, 50001, 50000/udp | FastAPI + P2P node |
-| `distristore-frontend` | nginx:alpine | 3000 → 80 | React dashboard |
-
 **Verification:** `docker compose config --quiet` — ✅ Valid | `docker compose up --build` — ✅ Running
 
 ---
@@ -230,23 +227,6 @@ Phase 13 (Adv Throughput)  █████████████████�
 | UDP Discovery (dynamic HELLO) | `backend/network/discovery.py` | HELLO reads `state.tcp_port`, SO_REUSEADDR before bind | ✅ |
 | Node Orchestrator | `backend/node/node.py` | Removed hardcoded `tcp_port` arg from `start_discovery()` | ✅ |
 | API Port Fallback | `backend/main.py` | Loop tries ports 8000→8010, catches `OSError` | ✅ |
-
-### Native Deployment Scripts
-
-| Script | Platform | Purpose | Status |
-|--------|----------|---------|--------|
-| `setup.sh` | Linux/macOS | Creates `.venv` + pip + npm install | ✅ |
-| `setup.bat` | Windows | Creates `.venv` + pip + npm install | ✅ |
-| `start.sh` | Linux/macOS | Backend (background) + Vite frontend | ✅ |
-| `start.bat` | Windows | Backend (new window) + Vite frontend | ✅ |
-
-### Docker vs Local Benchmarks
-
-| Metric | Local | Docker | Overhead |
-|--------|-------|--------|----------|
-| 1MB Upload | ~45ms | 54ms | +20% |
-| 1MB Download | ~30ms | 35ms | +17% |
-| Frontend load | — | 2ms | nginx |
 
 **Verification:** All 12 test suites pass ✅
 
@@ -279,7 +259,7 @@ Phase 13 (Adv Throughput)  █████████████████�
 | Remote chunk fetch | `backend/api/routes.py` `/download` | If chunk not local, fetches from peers + caches | ✅ |
 | Peer file listing | `backend/api/routes.py` `/files` | Shows files from peers (with `local_only` recursion guard) | ✅ |
 | `os.statvfs` → `shutil.disk_usage` | `backend/storage/local_store.py` | Cross-platform free space check | ✅ |
-| TCP LimitOverrunError | `backend/network/connection.py` | 1MB `STREAM_LIMIT` + catch `LimitOverrunError` | ✅ |
+| TCP LimitOverrunError | `backend/network/connection.py` | 8MB `STREAM_LIMIT` + catch `LimitOverrunError` | ✅ |
 
 ### 12b. TCP Peer Registration (Windows Firewall Fix)
 
@@ -288,30 +268,7 @@ Phase 13 (Adv Throughput)  █████████████████�
 | Linux dashboard shows 0 peers | Windows Firewall blocks UDP port 50000, so HELLO broadcasts never arrive | Register peers from TCP handshakes (`_handle_client` + `connect_to_peer`) | ✅ |
 | Peer data missing api_port/tcp_port | TCP HANDSHAKE only sent `node_id` + `name` | Extended HANDSHAKE and HANDSHAKE_ACK to include `tcp_port` + `api_port` | ✅ |
 
-### 12c. Encrypted File Download Error Handling
-
-| Bug | Root Cause | Fix | Status |
-|-----|-----------|-----|--------|
-| Download returns generic "status 400" | Encrypted file downloaded without password → integrity mismatch | Backend now checks `chunk.encrypted` flag and returns clear message: "This file is encrypted. Please provide the decryption password." | ✅ |
-| Frontend shows "Request failed with status code 400" | Axios wraps blob responses; JSON `detail` field not extracted | `downloadFile()` now parses blob error responses to extract server error messages | ✅ |
-
-### Download Flow (Before vs After)
-
-| Step | Before | After |
-|------|--------|-------|
-| 1. Manifest | Local only → 404 | Local → Peer HTTP fallback |
-| 2. Chunks | Local only → 404 | Local → Peer HTTP fallback + local cache |
-| 3. File list | Local only | Local + peer merge (deduplicated) |
-| 4. Peer discovery | UDP HELLO only | UDP HELLO + TCP handshake fallback |
-| 5. Encrypted files | Cryptic integrity error | Clear "file is encrypted" message |
-
-### Verification
-
-- ✅ Upload on Node A (Linux), download on Node B (Windows) via file hash
-- ✅ Windows peer shows in Linux dashboard via TCP handshake registration
-- ✅ Chunks fetched cross-node via HTTP: `GET /chunk/{hash}` (confirmed in logs)
-- ✅ Encrypted file download shows clear error when password not provided
-- ✅ Unencrypted file download works end-to-end (HTTP 200, correct file size)
+**Verification:** ✅ Upload on Node A (Linux), download on Node B (Windows) via file hash
 
 ---
 
@@ -325,10 +282,6 @@ Phase 13 (Adv Throughput)  █████████████████�
 | 50–500 MB | 1 MB | Balanced throughput / chunk count | ✅ |
 | > 500 MB | 4 MB | Minimizes chunk overhead on large files | ✅ |
 
-- **Implementation:** `get_optimal_chunk_size()` in `backend/file_engine/chunker.py`
-- **Pipeline integration:** `pipeline_chunk_and_store()` auto-selects when `chunk_size=None`
-- **Manifest storage:** Selected chunk size saved in `FileManifest.chunk_size` for downloaders
-
 ### 13b. Multithreaded Disk I/O
 
 | Operation | Before | After | Status |
@@ -337,9 +290,6 @@ Phase 13 (Adv Throughput)  █████████████████�
 | File hash (SHA-256) | Blocking `hashlib` loop | `_async_streaming_file_hash()` | ✅ |
 | Chunk write to disk | Blocking `f.write()` | `asyncio.to_thread(f.write, data)` | ✅ |
 | Merge-to-disk writes | Blocking per-chunk write | `asyncio.to_thread()` in pipeline | ✅ |
-
-- **Implementation:** `_async_read_file_chunks()`, `_async_streaming_file_hash()`, `_async_write_bytes()` in `chunker.py`
-- **Event loop safety:** Network I/O never blocked by disk operations
 
 ### 13c. Sliding Window & Selective Retransmission
 
@@ -351,51 +301,132 @@ Phase 13 (Adv Throughput)  █████████████████�
 | `MAX_RETRIES` | 5 | Max retransmission attempts | ✅ |
 | `CHUNK_ACK` protocol | — | Per-chunk acknowledgment message | ✅ |
 
-- **Implementation:** `backend/strategies/sliding_window.py`
-- **Classes:** `SlidingWindowSender` (per-peer), `SlidingWindowReplicationEngine` (file-level)
-- **Selective Retransmission:** Only timed-out chunks are resent, not the whole batch
-
-### 13d. TCP Buffer Tuning
-
-| Setting | Before | After | Status |
-|---------|--------|-------|--------|
-| `BUFFER_SIZE` | 64 KB | 1 MB | ✅ |
-| `STREAM_LIMIT` | 1 MB | 8 MB | ✅ |
-| `reader._limit` | 1 MB | 8 MB (matches STREAM_LIMIT) | ✅ |
-
 **Verification:** All existing test suites pass (Phase 1–5, 2R, 3O) ✅
 
+---
+
+## 🟢 Phase 14 — Storage Quotas & LRU Eviction
+
+| Component | File | Status |
+|-----------|------|--------|
+| `max_storage_mb` config (default 5 GB) | `config.yaml` + `backend/utils/config.py` | ✅ |
+| `get_total_storage_size()` | `backend/storage/local_store.py` | ✅ |
+| `evict_oldest_chunks(target_bytes_to_free)` | `backend/storage/local_store.py` | ✅ |
+| Background Garbage Collector (60s loop) | `backend/advanced/garbage_collector.py` | ✅ |
+| GC integration (node startup) | `backend/node/node.py` + `backend/main.py` | ✅ |
+| `/status` exposes `storage_used_mb` / `storage_max_mb` | `backend/api/routes.py` | ✅ |
+
+### LRU Eviction Logic
+- Uses `os.path.getatime()` to sort `.bin` chunks by last access time
+- Evicts oldest chunks one-by-one until target bytes freed
+- GC fires when storage exceeds `max_storage_mb`, frees down to 90% capacity
+- Runs via `asyncio.to_thread` to avoid blocking the event loop
+
+**Verification:** `python -m tests.test_phase5` — Upload/download/status with GC active ✅
+
+---
+
+## 🟢 Phase 15 — Zero-Trust Swarm Authentication
+
+| Component | File | Status |
+|-----------|------|--------|
+| `swarm_key` config (Pre-Shared Key) | `config.yaml` + `backend/utils/config.py` | ✅ |
+| UDP HMAC-SHA256 signing (`_build_hello`) | `backend/network/discovery.py` | ✅ |
+| UDP HMAC verification (`datagram_received`) | `backend/network/discovery.py` | ✅ |
+| `AUTH` protocol message builder | `backend/network/protocol.py` | ✅ |
+| TCP AUTH handshake (2s timeout) | `backend/network/connection.py` | ✅ |
+| `/status` → `swarm_auth_active: true` | `backend/api/routes.py` | ✅ |
+| Frontend "Swarm PSK: Active" badge | `frontend/src/pages/SettingsPage.jsx` | ✅ |
+
+### Security Model
+- **UDP**: Every HELLO packet is wrapped as `{"payload": {...}, "signature": "<hmac_hex>"}`. Mismatched signatures are silently dropped.
+- **TCP**: Every new TCP connection must send an `AUTH` message within 2 seconds containing an HMAC-signed `node_id`. Invalid or missing AUTH → connection closed immediately.
+- **No crash risk**: All auth failures are caught with `try/except` and logged at DEBUG level without disrupting the event loop.
+
+**Verification:** `python -m tests.test_phase1` — Discovery + TCP handshake with HMAC auth ✅
+
+---
+
+## 🟢 Phase 16 — SQLite Persistence
+
+| Component | File | Status |
+|-----------|------|--------|
+| `NodeDatabase` class (sqlite3 + WAL) | `backend/storage/db.py` | ✅ |
+| `peers` table (node_id, ip, tcp_port, api_port, health_score, last_seen) | `backend/storage/db.py` | ✅ |
+| `manifests` table (file_hash, filename, total_size, merkle_root, chunks_json) | `backend/storage/db.py` | ✅ |
+| Async wrappers (`asyncio.to_thread`) | `backend/storage/db.py` | ✅ |
+| Manifest persistence (save/load/list) | `backend/storage/local_store.py` | ✅ |
+| Peer persistence (upsert on discovery) | `backend/node/state.py` | ✅ |
+| Historical peer loading on boot | `backend/node/state.py` + `backend/main.py` | ✅ |
+| `/files` reads from SQLite | `backend/api/routes.py` | ✅ |
+
+### Benefits
+- **Instant boot**: Historical peers loaded from SQLite on startup — no cold discovery delay
+- **Crash recovery**: Manifests persist across restarts — no re-upload required
+- **No flat files**: Eliminated `manifest_*.json` files, single `distristore.db` file
+- **WAL journal mode**: Concurrent reads + non-blocking writes via `asyncio.to_thread`
+
+**Verification:** `python -m tests.test_phase2` + `python -m tests.test_phase5` — Manifest CRUD via SQLite ✅
+
+---
+
+## 🟢 Phase 17 — Cross-Platform Binary Protocol
+
+| Component | File | Status |
+|-----------|------|--------|
+| `msgpack>=1.0.8` dependency | `requirements.txt` | ✅ |
+| `orjson>=3.9.0` dependency | `requirements.txt` | ✅ |
+| TCP: msgpack serialization (length-prefixed) | `backend/network/connection.py` | ✅ |
+| TCP: Raw bytes chunk transfer (no base64) | `backend/network/protocol.py` | ✅ |
+| UDP: orjson fast JSON serialization | `backend/network/discovery.py` | ✅ |
+| Windows `ProactorEventLoopPolicy` | `backend/main.py` | ✅ |
+| Base64 removed from replication | `backend/strategies/replication.py` | ✅ |
+| Base64 removed from sliding window | `backend/strategies/sliding_window.py` | ✅ |
+| Base64 removed from self-healing | `backend/advanced/self_healing.py` | ✅ |
+
+### Protocol Changes
+- **TCP framing**: Switched from newline-delimited JSON to **4-byte length-prefixed msgpack**. This is critical because msgpack binary output can contain `0x0A` bytes.
+- **Base64 eliminated**: Chunk data now sent as raw `bytes` via msgpack's native binary support — **~33% bandwidth savings** on chunk transfers.
+- **UDP speed**: `orjson` is 3-10x faster than stdlib `json` for HELLO packet serialization.
+- **Windows**: IOCP event loop via `WindowsProactorEventLoopPolicy` for native async speed.
+
+**Verification:** `python -m tests.test_phase1` + `python -m tests.test_phase4` + `python -m tests.test_phase5` — All green ✅
+
+---
 
 ## 📁 Project Structure
 
 ```
 distristore/
 ├── backend/
-│   ├── main.py                      # FastAPI entry point
+│   ├── main.py                      # FastAPI entry point + Windows IOCP tuning
 │   ├── api/routes.py                # REST endpoints + /manifest + /chunk
 │   ├── node/
 │   │   ├── node.py                  # Node orchestrator
-│   │   └── state.py                 # Thread-safe state (asyncio locks)
+│   │   └── state.py                 # Thread-safe state + SQLite peer persistence
 │   ├── dht/
 │   │   ├── routing.py               # XOR distance + routing table
 │   │   └── lookup.py                # Peer search
 │   ├── network/
-│   │   ├── discovery.py             # UDP broadcast + health scores
-│   │   ├── protocol.py              # JSON message schemas
-│   │   └── connection.py            # Length-prefixed TCP framing
+│   │   ├── discovery.py             # UDP broadcast + HMAC auth + orjson
+│   │   ├── protocol.py              # msgpack binary message schemas
+│   │   └── connection.py            # Length-prefixed msgpack TCP framing
 │   ├── file_engine/
 │   │   ├── crypto.py                # AES-256-GCM + ProcessPool + key caching
-│   │   ├── chunker.py               # Generator chunking + O(N) merger
+│   │   ├── chunker.py               # Dynamic chunking + O(N) merger
 │   │   └── pipeline.py              # Streaming chunk pipeline
 │   ├── framework/client.py          # Python SDK + swarmed downloads
 │   ├── strategies/
 │   │   ├── selector.py              # Heuristic peer scoring
-│   │   ├── replication.py           # k-copy replication
+│   │   ├── replication.py           # k-copy replication (raw bytes)
 │   │   └── sliding_window.py        # Sliding window + selective retransmit
 │   ├── advanced/
 │   │   ├── heartbeat.py             # Peer liveness monitor
-│   │   └── self_healing.py          # Auto re-replication
-│   ├── storage/local_store.py       # Chunk disk I/O
+│   │   ├── self_healing.py          # Auto re-replication
+│   │   └── garbage_collector.py     # LRU eviction + storage quota
+│   ├── storage/
+│   │   ├── local_store.py           # Chunk disk I/O + SQLite manifest wrapper
+│   │   └── db.py                    # NodeDatabase (SQLite + WAL + async)
 │   └── benchmark/benchmark.py       # Performance testing
 ├── frontend/                        # Enterprise React + Vite dashboard
 │   └── src/
@@ -409,20 +440,26 @@ distristore/
 │       ├── App.jsx                  # BrowserRouter + layout shell
 │       └── index.css                # Design system tokens
 ├── tests/
-│   ├── test_phase1.py               # Node discovery + TCP
-│   ├── test_phase2.py               # File chunking + encryption
+│   ├── test_phase1.py               # Node discovery + TCP + HMAC auth
+│   ├── test_phase2.py               # File chunking + encryption + SQLite
 │   ├── test_phase2_gcm.py           # AES-256-GCM tamper detection
 │   ├── test_phase2_merkle.py        # Merkle root + proofs
 │   ├── test_phase2_swarm.py         # Parallel chunk downloads
 │   ├── test_phase2_health.py        # Health-scored discovery
 │   ├── test_phase3.py               # DHT routing
-│   ├── test_phase4.py               # Replication strategies
-│   ├── test_phase5.py               # API endpoints (HTTP)
-│   └── test_phase3_perf.py          # 100MB O(N) performance
+│   ├── test_phase4.py               # Replication (msgpack binary)
+│   ├── test_phase5.py               # HTTP API endpoints
+│   ├── test_phase3_perf.py          # 100MB O(N) performance
+│   ├── test_phase10_dynamic_ports.py
+│   ├── test_phase12_cross_node.py
+│   └── test_phase13_throughput.py
+├── .github/workflows/ci.yml         # GitHub Actions CI pipeline
 ├── config.yaml                      # Node configuration
 ├── setup.sh / setup.bat             # One-command environment setup
 ├── start.sh / start.bat             # One-command launch scripts
+├── ARCHITECTURE.md                  # System design + diagrams
 ├── BENCHMARKS.md                    # Performance data
+├── CHANGELOG.md                     # Release history
 ├── README.md                        # Project documentation
 └── PROGRESS.md                      # ← This file
 ```

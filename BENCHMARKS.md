@@ -1,7 +1,7 @@
 # DistriStore — Benchmarks
 
 > All benchmarks run on the same machine with AES-256-GCM encryption + Merkle verification enabled.
-> Last verified: 2026-05-03 (Phase 13 — Advanced Throughput + Sliding Window)
+> Last verified: 2026-05-03 (Phase 17 — Binary Protocol + SQLite Persistence)
 
 ---
 
@@ -107,6 +107,16 @@ Testing that time scales linearly with file size (not quadratically):
 | Merkle proof verification | ✅ All chunks verified |
 | Tampered chunk → root mismatch | ✅ Detected |
 
+### Zero-Trust Swarm Authentication (Phase 15)
+
+| Test | Protocol | Result |
+|------|----------|--------|
+| UDP HMAC-SHA256 broadcast signing | UDP | ✅ Valid packets accepted |
+| UDP HMAC mismatch → silent drop | UDP | ✅ Rejected cleanly |
+| TCP AUTH handshake (2s timeout) | TCP | ✅ Valid AUTH → proceed |
+| TCP AUTH invalid → connection closed | TCP | ✅ Rejected immediately |
+| TCP AUTH timeout → connection closed | TCP | ✅ No hang/crash |
+
 ---
 
 ## 📊 6. API & Network Benchmarks
@@ -128,7 +138,7 @@ Testing that time scales linearly with file size (not quadratically):
 | Health score computation time | <1ms |
 | Health score average (5 samples) | 2249.0 |
 | Health score variance (5 samples) | 1370.4 |
-| HELLO message size | ~300 bytes |
+| HELLO message size | ~384 bytes (orjson + HMAC) |
 | Metrics included | RAM, CPU freq, CPU load, disk free |
 
 ---
@@ -157,65 +167,22 @@ The `/download/{hash}` endpoint uses `FileResponse` + `BackgroundTasks` for O(1)
 | Upload → Download → Verify | 5 MB | ✅ | ✅ 0 files | ✅ PASS |
 | Wrong password rejection | 64 KB | — | — | ✅ HTTP 400 |
 
-### Download Architecture
-
-| Component | Before (Phase 7) | After (Phase 8) |
-|-----------|-------------------|------------------|
-| Merge function | `merge_chunks()` — all in RAM | `merge_chunks_to_disk()` — streamed to disk |
-| Response | `Response(content=file_data)` | `FileResponse(path=temp_file)` |
-| Memory usage | O(N) — entire file in RAM | O(1) — kernel sendfile |
-| Cleanup | None | `BackgroundTasks.add_task(os.remove)` |
-| Max safe file | ~500 MB before OOM | Unlimited (disk-bound) |
-
 ---
 
 ## 📊 9. Docker Containerization Benchmarks (Phase 9)
-
-### Container Build Sizes
-
-| Image | Base | Final Size |
-|-------|------|------------|
-| `distristore-backend` | python:3.11-slim | 700 MB |
-| `distristore-frontend` | nginx:alpine (multi-stage) | 93.5 MB |
-
-### Docker API Performance
-
-| Operation | File Size | Time | Notes |
-|-----------|-----------|------|-------|
-| Upload (via HTTP to container) | 1 MB | 54ms | python:3.11-slim on Docker |
-| Upload (via HTTP to container) | 5 MB | 71ms | python:3.11-slim on Docker |
-| Download (via HTTP from container) | 1 MB | 35ms | FileResponse streaming |
-| Frontend page load | — | 2ms | nginx:alpine CDN-level speed |
-| Health check response | — | <5ms | `/status` endpoint |
 
 ### Docker vs Local Performance Comparison
 
 | Metric | Local (Native) | Docker Container | Overhead |
 |--------|----------------|------------------|----------|
-| 100MB Chunk + Encrypt | 0.38s | — | — |
-| 100MB Merge + Decrypt | 0.29s | — | — |
 | 1MB Upload (HTTP API) | ~45ms | 54ms | +20% |
 | 1MB Download (HTTP API) | ~30ms | 35ms | +17% |
 | Frontend load (nginx) | — | 2ms | Excellent |
 | Container startup | — | ~5.7s | Health check wait |
 
-> Docker overhead is minimal (~17-20%) for HTTP API operations.
-> The frontend served via nginx:alpine is extremely fast (2ms page load).
-
-### Port Allocation
-
-| Service | Local (Native) | Docker |
-|---------|---------------|--------|
-| FastAPI API | Dynamic (8000-8010 fallback) | 8001 (mapped) |
-| TCP P2P | Dynamic (OS-assigned, port=0) | 50001 (mapped) |
-| UDP Discovery | 50000 (SO_REUSEADDR shared) | 50000/udp (mapped) |
-| Frontend Dashboard | 5173 (Vite dev) | 3000 → nginx:80 |
-
 ---
 
 ## 📊 10. Dynamic Port Resolution (Phase 10)
-
-### TCP Port Allocation
 
 | Feature | Before | After |
 |---------|--------|-------|
@@ -223,23 +190,6 @@ The `/download/{hash}` endpoint uses `FileResponse` + `BackgroundTasks` for O(1)
 | Port discovery | Static config | Extracted via `socket.getsockname()` |
 | HELLO broadcast | `tcp_port: 50001` | `tcp_port: state.tcp_port` (dynamic) |
 | Multi-node conflict | ❌ Crash on same host | ✅ Each node gets unique port |
-
-### API Port Fallback
-
-| Port | Status | Action |
-|------|--------|--------|
-| 8000 | In use (mobsf) | Skip, try 8001 |
-| 8001 | Available | ✅ Bind and serve |
-| 8002-8010 | Reserved fallback | Available if needed |
-
-### UDP Discovery Socket
-
-| Feature | Before | After |
-|---------|--------|-------|
-| Socket creation | `create_datagram_endpoint(local_addr=...)` | Pre-configured `socket.socket()` |
-| SO_REUSEADDR | Set after binding (too late) | Set before binding ✅ |
-| SO_REUSEPORT | Best-effort | Best-effort with try/except |
-| Multi-node sharing | ❌ Second node fails | ✅ Both share UDP port |
 
 ---
 
@@ -265,24 +215,53 @@ The `/download/{hash}` endpoint uses `FileResponse` + `BackgroundTasks` for O(1)
 | `MAX_RETRIES` | 5 | Retry limit before giving up |
 | Retransmission | Selective | Only timed-out chunks resent |
 
-### TCP Buffer Tuning
+---
 
-| Setting | Before | After | Why |
-|---------|--------|-------|-----|
-| `BUFFER_SIZE` | 64 KB | 1 MB | Supports 1MB/4MB dynamic chunks |
-| `STREAM_LIMIT` | 1 MB | 8 MB | Prevents `LimitOverrunError` on 4MB chunks |
-| `reader._limit` | 1 MB | 8 MB | Matches STREAM_LIMIT |
+## 📊 12. SQLite Persistence (Phase 16)
 
-### Async Disk I/O
+### Database Performance
 
 | Operation | Mechanism | Blocking? |
 |-----------|-----------|----------|
-| File read (chunking) | `asyncio.to_thread()` | ❌ Non-blocking |
-| File hash (SHA-256) | `asyncio.to_thread()` | ❌ Non-blocking |
-| Chunk write (store) | `asyncio.to_thread()` | ❌ Non-blocking |
-| Merge-to-disk | `asyncio.to_thread(f.write)` | ❌ Non-blocking |
+| Save manifest | `INSERT OR REPLACE` via `asyncio.to_thread` | ❌ Non-blocking |
+| Load manifest | `SELECT` via `asyncio.to_thread` | ❌ Non-blocking |
+| Upsert peer | `INSERT OR REPLACE` via `asyncio.to_thread` | ❌ Non-blocking |
+| Load all peers on boot | `SELECT *` via `asyncio.to_thread` | ❌ Non-blocking |
 
-> All disk I/O runs in a `ThreadPoolExecutor`, keeping the asyncio event loop free for network traffic.
+### Schema
+
+| Table | Primary Key | Columns |
+|-------|-------------|---------|
+| `peers` | `node_id TEXT` | ip, tcp_port, api_port, name, health_score, last_seen |
+| `manifests` | `file_hash TEXT` | filename, total_size, merkle_root, chunks_json |
+
+> **WAL journal mode** enables concurrent reads during writes. All DB calls are wrapped in `asyncio.to_thread()` to keep the event loop responsive.
+
+---
+
+## 📊 13. Binary Protocol (Phase 17)
+
+### Serialization Performance
+
+| Layer | Before | After | Improvement |
+|-------|--------|-------|-------------|
+| **TCP framing** | JSON + newline delimiter | msgpack + 4-byte length prefix | ~2x faster serialize, ~33% smaller payload |
+| **TCP chunk data** | base64-encoded string | Raw bytes (native msgpack) | **~33% bandwidth savings** |
+| **UDP metadata** | stdlib `json` | `orjson` | 3-10x faster JSON encode/decode |
+| **Windows asyncio** | Default `SelectorEventLoop` | `ProactorEventLoop` (IOCP) | Native I/O completion ports |
+
+### Protocol Frame Format
+
+```
+┌──────────────────────┬──────────────────────────────┐
+│ Length (4 bytes, BE)  │ msgpack Payload (N bytes)    │
+│ uint32 big-endian    │ binary: dict with raw bytes  │
+└──────────────────────┴──────────────────────────────┘
+```
+
+> The 4-byte length prefix is critical: msgpack binary output can contain `0x0A` (newline) bytes, making newline-delimited framing unsafe for binary chunk data.
+
+---
 
 ## 🔄 How to Run
 
@@ -318,18 +297,17 @@ docker compose down
 
 | Test | What it verifies | Command | Status |
 |------|-----------------|---------|--------|
-| Phase 1 | Node discovery + TCP (dynamic ports) | `python -m tests.test_phase1` | ✅ |
-| Phase 2 | File chunk + encrypt round-trip | `python -m tests.test_phase2` | ✅ |
+| Phase 1 | Node discovery + TCP + HMAC auth | `python -m tests.test_phase1` | ✅ |
+| Phase 2 | File chunk + encrypt + SQLite manifest | `python -m tests.test_phase2` | ✅ |
 | Phase 2 GCM | AES-256-GCM tamper detection | `python -m tests.test_phase2_gcm` | ✅ |
 | Phase 2 Merkle | Merkle proofs + root verification | `python -m tests.test_phase2_merkle` | ✅ |
 | Phase 2 Swarm | Parallel chunk downloads | `python -m tests.test_phase2_swarm` | ✅ |
 | Phase 2 Health | psutil health scores in HELLO | `python -m tests.test_phase2_health` | ✅ |
 | Phase 3 | DHT routing + XOR distance | `python -m tests.test_phase3` | ✅ |
-| Phase 4 | Replication strategies | `python -m tests.test_phase4` | ✅ |
-| Phase 5 | HTTP API endpoints | `python -m tests.test_phase5` | ✅ |
+| Phase 4 | Replication strategies (msgpack binary) | `python -m tests.test_phase4` | ✅ |
+| Phase 5 | HTTP API endpoints + SQLite files | `python -m tests.test_phase5` | ✅ |
 | Phase 3 Perf | 100MB O(N) performance | `python -m tests.test_phase3_perf` | ✅ |
-| Phase 8 | Memory-safe FileResponse download | `curl` upload → download → sha256sum | ✅ |
-| Phase 9 | Docker build + compose validation | `docker compose up --build` | ✅ |
-| Phase 10 | Dynamic ports + deployment scripts | `./start.sh` | ✅ |
-| Phase 13 | Dynamic chunks + sliding window + async I/O | Import + unit verification | ✅ |
+| Phase 10 | Dynamic ports + deployment scripts | `python -m tests.test_phase10_dynamic_ports` | ✅ |
+| Phase 12 | Cross-node manifest/chunk fetch | `python -m tests.test_phase12_cross_node` | ✅ |
+| Phase 13 | Dynamic chunks + sliding window + async I/O | `python -m tests.test_phase13_throughput` | ✅ |
 | Benchmark | 10-size throughput suite | `python -m backend.benchmark.benchmark` | ✅ |

@@ -12,7 +12,6 @@ Behavior:
 """
 
 import asyncio
-import base64
 import time
 from typing import Dict, List, Optional, Tuple
 
@@ -134,8 +133,7 @@ class SlidingWindowSender:
 
     async def _send_chunk(self, info: ChunkInfo, data: bytes) -> None:
         """Send a single chunk and add it to the unacked dictionary."""
-        data_b64 = base64.b64encode(data).decode()
-        msg = store_chunk_msg(self.state.node_id, info.chunk_hash, data_b64, self.file_hash)
+        msg = store_chunk_msg(self.state.node_id, info.chunk_hash, data, self.file_hash)
         msg["index"] = info.index  # Include index for ACK correlation
 
         async with self._lock:
@@ -213,9 +211,8 @@ class SlidingWindowSender:
                     uc.retries += 1
                     uc.timestamp = time.monotonic()
 
-                    data_b64 = base64.b64encode(uc.data).decode()
                     msg = store_chunk_msg(
-                        self.state.node_id, uc.chunk_hash, data_b64, self.file_hash
+                        self.state.node_id, uc.chunk_hash, uc.data, self.file_hash
                     )
                     msg["index"] = uc.index
 

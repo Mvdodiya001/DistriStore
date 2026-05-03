@@ -8,7 +8,7 @@ Peers are scored on discovery, enabling smarter chunk placement decisions.
 """
 
 import asyncio
-import json
+import orjson
 import os
 import socket
 import time
@@ -80,8 +80,8 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
 
     def datagram_received(self, data: bytes, addr: tuple):
         try:
-            wrapper = json.loads(data.decode())
-        except (json.JSONDecodeError, UnicodeDecodeError):
+            wrapper = orjson.loads(data)
+        except (orjson.JSONDecodeError, UnicodeDecodeError):
             return
 
         payload = wrapper.get("payload")
@@ -93,8 +93,8 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
 
         from backend.utils.config import get_config
         key = get_config().network.swarm_key.encode()
-        payload_str = json.dumps(payload, sort_keys=True)
-        expected = hmac.new(key, payload_str.encode(), hashlib.sha256).hexdigest()
+        payload_str = orjson.dumps(payload, option=orjson.OPT_SORT_KEYS)
+        expected = hmac.new(key, payload_str, hashlib.sha256).hexdigest()
 
         if not hmac.compare_digest(signature, expected):
             logger.debug(f"Rejected unauthorized UDP broadcast: {payload_str} sig={signature} exp={expected}")
@@ -152,10 +152,10 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
         }
         from backend.utils.config import get_config
         key = get_config().network.swarm_key.encode()
-        payload_str = json.dumps(payload, sort_keys=True)
-        sig = hmac.new(key, payload_str.encode(), hashlib.sha256).hexdigest()
+        payload_bytes = orjson.dumps(payload, option=orjson.OPT_SORT_KEYS)
+        sig = hmac.new(key, payload_bytes, hashlib.sha256).hexdigest()
         
-        return json.dumps({"payload": payload, "signature": sig}).encode()
+        return orjson.dumps({"payload": payload, "signature": sig})
 
     async def broadcast_loop(self):
         logger.info(

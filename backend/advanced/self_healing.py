@@ -97,7 +97,6 @@ class SelfHealingManager:
             new_targets = [pid for pid, _ in closest]
 
             # Send chunk to new targets
-            import base64
             from backend.network.protocol import store_chunk_msg
 
             for peer_id in new_targets:
@@ -108,8 +107,7 @@ class SelfHealingManager:
                         conn = await self.conn_mgr.connect_to_peer(peer.ip, peer.tcp_port)
                 if conn:
                     try:
-                        data_b64 = base64.b64encode(chunk_data).decode()
-                        msg = store_chunk_msg(self.state.node_id, chunk_hash, data_b64)
+                        msg = store_chunk_msg(self.state.node_id, chunk_hash, chunk_data)
                         await conn.send(msg)
                         alive_holders.append(peer_id)
                         logger.info(f"Re-replicated {chunk_hash[:12]}... to {peer_id[:12]}...")

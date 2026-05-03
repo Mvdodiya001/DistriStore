@@ -1,6 +1,6 @@
 # DistriStore — Architecture & Design Document
 
-> **Version:** 2.0 · **Last Updated:** April 2026 · **Authors:** Project Team
+> **Version:** 2.0 · **Last Updated:** May 2026 · **Authors:** Project Team
 
 ---
 
@@ -30,9 +30,9 @@ DistriStore is a **LAN-optimized, trackerless P2P distributed file storage syste
 | Principle | Implementation |
 |-----------|---------------|
 | **Content Addressing** | Files identified by SHA-256 hash, chunks by individual hashes |
-| **Zero Trust** | AES-256-GCM authenticated encryption — tampered chunks auto-rejected |
+| **Zero Trust** | AES-256-GCM authenticated encryption + HMAC-SHA256 swarm PSK |
 | **Decentralization** | No tracker — UDP broadcast discovery + TCP mesh for data |
-| **Fault Tolerance** | k-copy replication + self-healing re-replication on node failure |
+| **Fault Tolerance** | k-copy replication + self-healing + SQLite crash recovery |
 | **Cross-Platform** | Windows + Linux — platform-independent APIs throughout |
 
 ### Three-Layer Architecture
@@ -48,8 +48,8 @@ DistriStore is a **LAN-optimized, trackerless P2P distributed file storage syste
 │  API Routes │ File Engine │ DHT │ Replication │ Healing   │
 ├──────────────────────────────────────────────────────────┤
 │               NETWORK & STORAGE LAYER                    │
-│    UDP:50000 (Discovery) │ TCP:50001 (P2P Data)          │
-│    HTTP:8888 (Cross-Node API) │ .storage/ (Filesystem)   │
+│    UDP:50000 (Discovery+HMAC) │ TCP:50001 (msgpack P2P)    │
+│    HTTP:8888 (Cross-Node API) │ SQLite (Persistence)       │
 └──────────────────────────────────────────────────────────┘
 ```
 
@@ -80,16 +80,18 @@ The backend follows an **object-oriented architecture** with clear separation of
 | **DistriNode** | Orchestration | Boots TCP server, UDP discovery, peer connector loop |
 | **NodeState** | State | Thread-safe peer registry with asyncio locks |
 | **PeerInfo** | Data | Dataclass holding peer metadata (IP, port, health, latency) |
-| **ConnectionManager** | Network | Manages TCP connections, handshakes, message routing |
-| **PeerConnection** | Network | Single TCP stream wrapper (JSON framing over asyncio streams) |
-| **DiscoveryProtocol** | Network | UDP datagram protocol for HELLO broadcasts |
-| **LocalStore** | Storage | Disk I/O for chunks (`chunk_{hash}.bin`) and manifests (`manifest_{hash}.json`) |
+| **ConnectionManager** | Network | Manages TCP connections, handshakes, AUTH verification |
+| **PeerConnection** | Network | Single TCP stream wrapper (msgpack framing over asyncio streams) |
+| **DiscoveryProtocol** | Network | UDP datagram protocol for HMAC-signed HELLO broadcasts |
+| **LocalStore** | Storage | Disk I/O for chunks + SQLite-backed manifest persistence |
+| **NodeDatabase** | Storage | SQLite wrapper with `peers` and `manifests` tables (WAL mode) |
 | **FileManifest** | Data | File metadata: hash, filename, chunks list, Merkle root |
 | **ChunkInfo** | Data | Per-chunk metadata: index, hash, size, encrypted flag |
 | **RoutingTable** | DHT | Maps `chunk_hash → [peer_ids]` for chunk location tracking |
 | **ReplicationEngine** | Strategy | Selects k-best peers (XOR + heuristic) and sends chunks via TCP |
 | **HeartbeatMonitor** | Advanced | Periodic PING/PONG to measure latency and detect dead peers |
 | **SelfHealingManager** | Advanced | Detects under-replicated chunks and re-replicates automatically |
+| **GarbageCollector** | Advanced | LRU eviction when storage exceeds quota |
 
 ### Key Relationships
 
@@ -104,7 +106,7 @@ The backend follows an **object-oriented architecture** with clear separation of
 
 ## 3. Entity-Relationship Diagram — Data Model
 
-DistriStore uses a **filesystem-based storage model** — no external database. All data is stored as JSON manifests and binary chunk files in the `.storage/` directory.
+DistriStore uses a **hybrid storage model**: binary chunk files on the local filesystem and structured metadata in a **SQLite database** (`distristore.db`).
 
 ![ER Diagram](docs/er_diagram.png)
 
@@ -113,9 +115,9 @@ DistriStore uses a **filesystem-based storage model** — no external database. 
 | Entity | Storage Format | Primary Key | Description |
 |--------|---------------|-------------|-------------|
 | **NODE** | In-memory (`NodeState`) | `node_id` (SHA-1 hex) | Current node's identity and configuration |
-| **PEER** | In-memory (`PeerInfo`) | `node_id` | Discovered remote peers with health metrics |
-| **FILE_MANIFEST** | JSON file (`manifest_{hash}.json`) | `file_hash` (SHA-256) | File metadata + chunk list + Merkle root |
-| **CHUNK_INFO** | Embedded in manifest JSON | `chunk_hash` | Per-chunk metadata (index, size, encrypted) |
+| **PEER** | SQLite `peers` table + In-memory (`PeerInfo`) | `node_id` | Discovered remote peers with health metrics |
+| **FILE_MANIFEST** | SQLite `manifests` table | `file_hash` (SHA-256) | File metadata + chunk list + Merkle root |
+| **CHUNK_INFO** | Embedded in manifest `chunks_json` | `chunk_hash` | Per-chunk metadata (index, size, encrypted) |
 | **CHUNK** | Binary file (`chunk_{hash}.bin`) | `chunk_hash` (SHA-256) | Raw or encrypted chunk data |
 | **ROUTING_ENTRY** | In-memory (`RoutingTable`) | `(chunk_hash, peer_id)` | Which peers hold which chunks |
 
@@ -133,13 +135,12 @@ DistriStore uses a **filesystem-based storage model** — no external database. 
 
 ```
 .storage/
-├── manifest_a35ac2eb604e.json     # File manifest (JSON)
-├── manifest_3108d87cd228.json
-├── chunk_2f8c6dd44b84.bin         # Raw/encrypted chunk (binary)
+├── distristore.db                     # SQLite database (manifests + peers)
+├── chunk_2f8c6dd44b84.bin             # Raw/encrypted chunk (binary)
 ├── chunk_38ea85ab2dea.bin
 ├── chunk_786a3c6dff58.bin
-├── ...                            # ~256KB per chunk
-└── temp_357ae4e8610a.bin          # Temp file during download (auto-deleted)
+├── ...                                # ~256KB-4MB per chunk (dynamic)
+└── temp_357ae4e8610a.bin              # Temp file during download (auto-deleted)
 ```
 
 ---
@@ -245,10 +246,12 @@ DistriStore nodes communicate over **three network channels**: UDP for discovery
 |---------|-----------|--------|---------|
 | `HANDSHAKE` | Initiator → Receiver | `node_id, name, tcp_port, api_port` | Establish connection + register peer |
 | `HANDSHAKE_ACK` | Receiver → Initiator | `node_id, name, tcp_port, api_port` | Confirm connection + register peer |
-| `STORE_CHUNK` | Sender → Holder | `chunk_hash, chunk_data (base64), file_hash` | Replicate chunk to peer |
+| `AUTH` | Initiator → Receiver | `node_id, signature (HMAC-SHA256)` | Swarm authentication (must be first message) |
+| `STORE_CHUNK` | Sender → Holder | `chunk_hash, chunk_data (raw bytes), file_hash` | Replicate chunk to peer |
 | `STORE_ACK` | Holder → Sender | `chunk_hash, success` | Confirm chunk stored |
 | `GET_CHUNK` | Requester → Holder | `chunk_hash` | Request chunk data |
-| `CHUNK_DATA` | Holder → Requester | `chunk_hash, chunk_data (base64)` | Return chunk data |
+| `CHUNK_DATA` | Holder → Requester | `chunk_hash, chunk_data (raw bytes)` | Return chunk data |
+| `CHUNK_ACK` | Holder → Sender | `chunk_hash, index` | Sliding window acknowledgment |
 | `FIND_NODE` | Any → Any | `target_hash` | DHT lookup |
 | `FIND_RESULT` | Any → Any | `target_hash, closest_peers[]` | DHT lookup response |
 | `PING` | Monitor → Peer | `sender_id` | Liveness check |
@@ -419,6 +422,7 @@ Instead of a custom binary protocol for cross-node chunk fetching, we reuse the 
 | Key Derivation | PBKDF2-HMAC-SHA256 (100K iterations) | Brute-force attacks |
 | Integrity | SHA-256 per-chunk hash + Merkle root | Bit-rot, corruption |
 | Authentication | GCM tag verification | Man-in-the-middle, tampering |
+| Network Auth | HMAC-SHA256 swarm PSK (UDP + TCP) | Unauthorized peer joining |
 
 ---
 

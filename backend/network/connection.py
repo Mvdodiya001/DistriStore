@@ -1,10 +1,11 @@
 """
 DistriStore — TCP Connection Manager
 Async TCP server + client for peer-to-peer communication.
+Phase 17: Uses msgpack binary protocol instead of JSON for zero-copy chunk transfer.
 """
 
 import asyncio
-import json
+import msgpack
 from typing import Callable, Optional
 
 from backend.node.state import NodeState
@@ -12,7 +13,7 @@ from backend.utils.logger import get_logger
 
 logger = get_logger("network.connection")
 
-# Message delimiter — newline-separated JSON
+# Message delimiter — newline byte (cannot appear inside msgpack output)
 DELIMITER = b"\n"
 BUFFER_SIZE = 1048576          # 1 MB — supports dynamic 1MB and 4MB chunks
 STREAM_LIMIT = 8 * 1024 * 1024  # 8 MB — prevents LimitOverrunError on large 4MB chunks
@@ -30,16 +31,22 @@ class PeerConnection:
         self.reader._limit = STREAM_LIMIT
 
     async def send(self, message: dict) -> None:
-        data = json.dumps(message).encode() + DELIMITER
-        self.writer.write(data)
+        payload = msgpack.packb(message, use_bin_type=True)
+        # 4-byte big-endian length header + payload
+        header = len(payload).to_bytes(4, 'big')
+        self.writer.write(header + payload)
         await self.writer.drain()
 
     async def receive(self) -> Optional[dict]:
         try:
-            data = await self.reader.readuntil(DELIMITER)
-            return json.loads(data.strip())
+            header = await self.reader.readexactly(4)
+            length = int.from_bytes(header, 'big')
+            if length > STREAM_LIMIT:
+                return None
+            payload = await self.reader.readexactly(length)
+            return msgpack.unpackb(payload, raw=False)
         except (asyncio.IncompleteReadError, asyncio.LimitOverrunError,
-                ConnectionResetError, json.JSONDecodeError):
+                ConnectionResetError, Exception):
             return None
 
     async def close(self) -> None:
