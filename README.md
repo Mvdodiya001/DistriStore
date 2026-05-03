@@ -92,6 +92,7 @@ Files are split, encrypted, and replicated across the network. Any node can serv
 - **Async disk I/O** via `asyncio.to_thread`
 - **msgpack binary protocol** — ~33% less TCP overhead
 - **orjson** fast UDP metadata serialization
+- **zstd compression** — per-chunk Zstandard at level 3
 
 </td>
 </tr>
@@ -272,6 +273,7 @@ distristore/
 | **SQLite Persistence** | Manifests + peer routing survive restarts — instant boot |
 | **Binary Protocol** | `msgpack` TCP framing eliminates base64 — ~33% bandwidth savings |
 | **Swarm Auth (PSK)** | HMAC-SHA256 on every UDP broadcast and TCP connection |
+| **ZSTD Compression** | Per-chunk Zstandard compression with backward-compatible manifests |
 
 ---
 
@@ -395,7 +397,7 @@ python -m backend.benchmark.benchmark
 | **Parallelism** | `ProcessPoolExecutor` (GIL bypass) · `asyncio.gather` |
 | **Discovery** | UDP broadcast + TCP handshake fallback · `psutil` health metrics · HMAC-SHA256 swarm auth |
 | **Cross-Node** | `httpx` async client for peer manifest/chunk fetching |
-| **Serialization** | `msgpack` (TCP binary) · `orjson` (UDP fast JSON) |
+| **Serialization** | `msgpack` (TCP binary) · `orjson` (UDP fast JSON) · `zstandard` (chunk compression) |
 | **Frontend** | React 19 · Vite 8 · React Router · Zustand · Recharts · lucide-react |
 | **Storage** | Local filesystem · SQLite (WAL mode) · `FileResponse` streaming |
 | **Platforms** | Windows + Linux/macOS — cross-platform APIs throughout |

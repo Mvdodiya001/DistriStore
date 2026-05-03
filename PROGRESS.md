@@ -27,9 +27,10 @@ Phase 14 (Storage Quotas) ██████████████████
 Phase 15 (Swarm Auth)     ████████████████████ 100% ✅
 Phase 16 (SQLite)         ████████████████████ 100% ✅
 Phase 17 (Binary Proto)   ████████████████████ 100% ✅
+Phase 18 (ZSTD Compress)  ████████████████████ 100% ✅
 ```
 
-**Current Position: All 19 phases complete. V2.0 — Zero-Trust Binary Protocol.**
+**Current Position: All 20 phases complete. V2.1 — ZSTD Stream Compression.**
 
 ---
 
@@ -394,6 +395,44 @@ Phase 17 (Binary Proto)   ██████████████████
 
 ---
 
+## 🟢 Phase 18 — ZSTD Stream Compression
+
+| Component | File | Status |
+|-----------|------|--------|
+| `zstandard>=0.22.0` dependency | `requirements.txt` | ✅ |
+| Compress → encrypt in workers | `backend/file_engine/crypto.py` | ✅ |
+| Decrypt → decompress in workers | `backend/file_engine/crypto.py` | ✅ |
+| Compress in `chunk_file()` | `backend/file_engine/chunker.py` | ✅ |
+| Decompress in `merge_chunks()` | `backend/file_engine/chunker.py` | ✅ |
+| Decompress in `merge_chunks_to_disk()` | `backend/file_engine/chunker.py` | ✅ |
+| Compress in `pipeline_chunk_and_store()` | `backend/file_engine/pipeline.py` | ✅ |
+| Decompress in `pipeline_merge_to_disk()` | `backend/file_engine/pipeline.py` | ✅ |
+| Manifest `"compression": "zstd"` field | `backend/file_engine/chunker.py` | ✅ |
+| SQLite `compression` column + migration | `backend/storage/db.py` | ✅ |
+| Upload API compression telemetry | `backend/api/routes.py` | ✅ |
+| Backward compat (no-compress workers) | `backend/file_engine/crypto.py` | ✅ |
+
+### Architecture
+- **Upload flow**: Read chunk → **zstd.compress(level=3)** → AES-256-GCM encrypt → store
+- **Download flow**: Load chunk → AES-256-GCM decrypt → **zstd.decompress()** → write
+- **O(1) memory**: Each chunk compressed/decompressed individually — no full-file buffering
+- **GIL bypass**: Compression runs inside `ProcessPoolExecutor` workers alongside crypto
+- **Backward compat**: Manifests without `compression: "zstd"` skip decompression (pre-Phase-18 files)
+- **SQLite**: `compression` column added with `ALTER TABLE` migration for existing databases
+
+### Upload API Response (new fields)
+```json
+{
+  "compressed_size": 45231,
+  "compression_ratio": 2.26,
+  "compression": "zstd"
+}
+```
+
+**Verification:** `python -m tests.test_phase2` + `python -m tests.test_phase5` + `python -m tests.test_phase2_gcm` — All green ✅
+
+---
+
 ## 📁 Project Structure
 
 ```
@@ -412,9 +451,9 @@ distristore/
 │   │   ├── protocol.py              # msgpack binary message schemas
 │   │   └── connection.py            # Length-prefixed msgpack TCP framing
 │   ├── file_engine/
-│   │   ├── crypto.py                # AES-256-GCM + ProcessPool + key caching
-│   │   ├── chunker.py               # Dynamic chunking + O(N) merger
-│   │   └── pipeline.py              # Streaming chunk pipeline
+│   │   ├── crypto.py                # AES-256-GCM + zstd + ProcessPool
+│   │   ├── chunker.py               # Dynamic chunking + zstd + O(N) merger
+│   │   └── pipeline.py              # Streaming chunk pipeline + zstd
 │   ├── framework/client.py          # Python SDK + swarmed downloads
 │   ├── strategies/
 │   │   ├── selector.py              # Heuristic peer scoring

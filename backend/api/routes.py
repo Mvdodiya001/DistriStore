@@ -97,11 +97,19 @@ async def upload_file(
 
         logger.info(f"Uploaded '{file.filename}': {len(chunks)} chunks, hash={manifest.file_hash[:16]}...")
 
+        # Phase 18: compression telemetry
+        compressed_size = sum(len(c) for c in chunks)
+        original_size = manifest.original_size
+        ratio = round(original_size / compressed_size, 2) if compressed_size > 0 else 1.0
+
         return {
             "status": "success",
             "file_hash": manifest.file_hash,
             "filename": manifest.original_filename,
             "size": manifest.original_size,
+            "compressed_size": compressed_size,
+            "compression_ratio": ratio,
+            "compression": manifest.compression,
             "chunks": len(manifest.chunks),
             "manifest": manifest.to_dict(),
             "replication": replicated,

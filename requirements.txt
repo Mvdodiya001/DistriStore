@@ -17,3 +17,6 @@ psutil>=5.9.0
 # Phase 17: Binary protocol & fast serialization
 msgpack>=1.0.8
 orjson>=3.9.0
+
+# Phase 18: Per-chunk stream compression
+zstandard>=0.22.0

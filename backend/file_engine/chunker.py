@@ -10,6 +10,10 @@ Phase 3: Performance Optimization
 Phase 10: Advanced Throughput
   - Dynamic chunk sizing: 256KB / 1MB / 4MB based on file size
   - Async disk I/O wrappers via asyncio.to_thread (non-blocking)
+
+Phase 18: Per-chunk zstd compression
+  - Compress before encrypt, decompress after decrypt
+  - Backward-compatible: manifests without 'compression' skip decompression
 """
 
 import asyncio
@@ -18,6 +22,8 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Generator, Tuple, Optional
+
+import zstandard as zstd
 
 from backend.file_engine.crypto import sha256_hash, encrypt, decrypt
 from backend.utils.logger import get_logger
@@ -118,16 +124,18 @@ class FileManifest:
     file_hash: str
     chunk_size: int
     merkle_root: str = ""
+    compression: str = ""
     chunks: List[ChunkInfo] = field(default_factory=list)
 
     def to_dict(self) -> dict:
-        return {
+        d = {
             "version": 2,
             "original_filename": self.original_filename,
             "original_size": self.original_size,
             "file_hash": self.file_hash,
             "chunk_size": self.chunk_size,
             "merkle_root": self.merkle_root,
+            "compression": self.compression,
             "chunk_count": len(self.chunks),
             "chunks": [
                 {"index": c.index, "chunk_hash": c.chunk_hash,
@@ -135,6 +143,7 @@ class FileManifest:
                 for c in self.chunks
             ],
         }
+        return d
 
     @classmethod
     def from_dict(cls, d: dict) -> "FileManifest":
@@ -144,6 +153,7 @@ class FileManifest:
             file_hash=d["file_hash"],
             chunk_size=d.get("chunk_size", DEFAULT_CHUNK_SIZE),
             merkle_root=d.get("merkle_root", ""),
+            compression=d.get("compression", ""),
         )
         for c in d.get("chunks", []):
             manifest.chunks.append(ChunkInfo(
@@ -264,13 +274,19 @@ def chunk_file(file_path: str, chunk_size: int = DEFAULT_CHUNK_SIZE,
         from backend.file_engine.crypto import derive_key, encrypt_with_key
         key, salt = derive_key(password)
 
+    # Phase 18: reusable compressor instance
+    compressor = zstd.ZstdCompressor(level=3)
+
     # Lazy generator — only 1 chunk in memory at a time during processing
     for idx, raw_bytes in _stream_chunks(file_path, chunk_size):
+        # Phase 18: Compress before encrypt (O(1) per chunk)
+        compressed = compressor.compress(raw_bytes)
+
         if password:
-            chunk_bytes = encrypt_with_key(raw_bytes, key, salt)
+            chunk_bytes = encrypt_with_key(compressed, key, salt)
             encrypted = True
         else:
-            chunk_bytes = raw_bytes
+            chunk_bytes = compressed
             encrypted = False
 
         chunk_hash = sha256_hash(chunk_bytes)
@@ -283,11 +299,12 @@ def chunk_file(file_path: str, chunk_size: int = DEFAULT_CHUNK_SIZE,
         chunk_data_list.append(chunk_bytes)
 
     manifest.merkle_root = compute_merkle_root(chunk_hashes)
+    manifest.compression = "zstd"
 
     logger.info(
         f"Chunked '{path.name}' ({file_size} bytes) "
         f"-> {len(manifest.chunks)} chunks "
-        f"({'encrypted' if password else 'plain'}) "
+        f"({'encrypted' if password else 'plain'}, zstd) "
         f"merkle_root={manifest.merkle_root[:16]}..."
     )
     return manifest, chunk_data_list
@@ -377,6 +394,10 @@ def merge_chunks(manifest: FileManifest, chunk_data_list: list[bytes],
         first_salt = ordered[0][1][1:1 + _SS]
         dec_key, _ = _dk(password, first_salt)
 
+    # Phase 18: decompressor for zstd-compressed chunks
+    use_zstd = manifest.compression == "zstd"
+    decompressor = zstd.ZstdDecompressor() if use_zstd else None
+
     # Pre-allocate exact-size buffer — O(N) time, single allocation
     buffer = bytearray(manifest.original_size)
     offset = 0
@@ -387,6 +408,9 @@ def merge_chunks(manifest: FileManifest, chunk_data_list: list[bytes],
                 data = decrypt_with_key(data, dec_key)
             else:
                 data = decrypt(data, password)
+        # Phase 18: decompress after decrypt
+        if decompressor is not None:
+            data = decompressor.decompress(data)
         buf_len = len(data)
         buffer[offset:offset + buf_len] = data
         offset += buf_len
@@ -426,6 +450,10 @@ def merge_chunks_to_disk(manifest: FileManifest, chunk_data_list: list[bytes],
         first_salt = ordered[0][1][1:1 + _SS]
         dec_key, _ = _dk(password, first_salt)
 
+    # Phase 18: decompressor for zstd-compressed chunks
+    use_zstd = manifest.compression == "zstd"
+    decompressor = zstd.ZstdDecompressor() if use_zstd else None
+
     with open(output_path, "wb") as f:
         for info, data in ordered:
             if info.encrypted and password:
@@ -433,6 +461,9 @@ def merge_chunks_to_disk(manifest: FileManifest, chunk_data_list: list[bytes],
                     data = decrypt_with_key(data, dec_key)
                 else:
                     data = decrypt(data, password)
+            # Phase 18: decompress after decrypt
+            if decompressor is not None:
+                data = decompressor.decompress(data)
             f.write(data)
             h.update(data)
 

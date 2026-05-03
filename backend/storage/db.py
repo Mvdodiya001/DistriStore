@@ -55,9 +55,15 @@ class NodeDatabase:
                 filename    TEXT,
                 total_size  INTEGER,
                 merkle_root TEXT,
-                chunks_json TEXT
+                chunks_json TEXT,
+                compression TEXT DEFAULT ''
             )
         """)
+        # Phase 18: migrate existing tables that lack the compression column
+        try:
+            cur.execute("ALTER TABLE manifests ADD COLUMN compression TEXT DEFAULT ''")
+        except sqlite3.OperationalError:
+            pass  # column already exists
         self._conn.commit()
 
     # ── Manifest operations (sync, called via to_thread) ───────────
@@ -66,14 +72,15 @@ class NodeDatabase:
         chunks_json = json.dumps(manifest_dict.get("chunks", []))
         self._conn.execute(
             """INSERT OR REPLACE INTO manifests
-               (file_hash, filename, total_size, merkle_root, chunks_json)
-               VALUES (?, ?, ?, ?, ?)""",
+               (file_hash, filename, total_size, merkle_root, chunks_json, compression)
+               VALUES (?, ?, ?, ?, ?, ?)""",
             (
                 file_hash,
                 manifest_dict.get("original_filename", ""),
                 manifest_dict.get("original_size", 0),
                 manifest_dict.get("merkle_root", ""),
                 chunks_json,
+                manifest_dict.get("compression", ""),
             ),
         )
         self._conn.commit()
@@ -92,6 +99,7 @@ class NodeDatabase:
             "original_size": row["total_size"],
             "merkle_root": row["merkle_root"],
             "chunks": json.loads(row["chunks_json"]),
+            "compression": row["compression"] if "compression" in row.keys() else "",
         }
 
     def _get_all_manifests_sync(self) -> list[dict]:
@@ -104,6 +112,7 @@ class NodeDatabase:
                 "original_size": row["total_size"],
                 "merkle_root": row["merkle_root"],
                 "chunks": json.loads(row["chunks_json"]),
+                "compression": row["compression"] if "compression" in row.keys() else "",
             })
         return results
 

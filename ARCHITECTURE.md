@@ -410,8 +410,10 @@ Instead of a custom binary protocol for cross-node chunk fetching, we reuse the 
 | Operation | Memory Strategy |
 |-----------|----------------|
 | Chunking | Generator reads 256KB at a time from disk |
+| Compression | Per-chunk zstd.compress(level=3) before encrypt |
 | Encryption | Single key derived via PBKDF2, reused for all chunks |
 | Download | Chunks merged to temp file on disk, served via `FileResponse` |
+| Decompression | Per-chunk zstd.decompress() after decrypt |
 | Merkle tree | Computed incrementally during chunk streaming |
 
 ### 10.5 Security Model
@@ -420,6 +422,7 @@ Instead of a custom binary protocol for cross-node chunk fetching, we reuse the 
 |-------|-----------|-------------------|
 | Encryption | AES-256-GCM (authenticated) | Eavesdropping + tampering |
 | Key Derivation | PBKDF2-HMAC-SHA256 (100K iterations) | Brute-force attacks |
+| Compression | Zstandard (level 3) per-chunk | Bandwidth optimization |
 | Integrity | SHA-256 per-chunk hash + Merkle root | Bit-rot, corruption |
 | Authentication | GCM tag verification | Man-in-the-middle, tampering |
 | Network Auth | HMAC-SHA256 swarm PSK (UDP + TCP) | Unauthorized peer joining |

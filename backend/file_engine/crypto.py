@@ -4,6 +4,9 @@ DistriStore — AES-256-GCM with ProcessPoolExecutor for GIL Bypass
 Phase 3: CPU-bound crypto (SHA-256, AES) dispatched to ProcessPool
 so the asyncio event loop stays responsive during heavy encryption.
 
+Phase 18: Per-chunk zstd compression inside workers (compress → encrypt,
+decrypt → decompress) for ~2-5x smaller network payloads.
+
 Binary format (per chunk):
   [version (1)] [salt (16)] [nonce (12)] [auth_tag (16)] [ciphertext...]
 """
@@ -13,6 +16,8 @@ import os
 import struct
 from concurrent.futures import ProcessPoolExecutor
 from typing import List, Tuple
+
+import zstandard as zstd
 
 from Crypto.Cipher import AES
 
@@ -125,19 +130,28 @@ def _worker_encrypt(chunk_data: bytes, password: str) -> Tuple[bytes, str]:
 
 
 def _worker_encrypt_keyed(chunk_data: bytes, key: bytes, salt: bytes) -> Tuple[bytes, str]:
-    """Encrypt with pre-derived key — skips PBKDF2. Runs in worker process."""
+    """Compress → encrypt with pre-derived key. Runs in worker process."""
+    compressed = zstd.ZstdCompressor(level=3).compress(chunk_data)
+    ct = encrypt_with_key(compressed, key, salt)
+    h = sha256_hash(ct)
+    return ct, h
+
+
+def _worker_decrypt_keyed(chunk_data: bytes, key: bytes) -> bytes:
+    """Decrypt → decompress with pre-derived key. Runs in worker process."""
+    decrypted = decrypt_with_key(chunk_data, key)
+    return zstd.ZstdDecompressor().decompress(decrypted)
+
+
+def _worker_encrypt_keyed_nocompress(chunk_data: bytes, key: bytes, salt: bytes) -> Tuple[bytes, str]:
+    """Encrypt without compression (backward compat). Runs in worker process."""
     ct = encrypt_with_key(chunk_data, key, salt)
     h = sha256_hash(ct)
     return ct, h
 
 
-def _worker_decrypt(chunk_data: bytes, password: str) -> bytes:
-    """Decrypt a chunk. Runs in worker process."""
-    return decrypt(chunk_data, password)
-
-
-def _worker_decrypt_keyed(chunk_data: bytes, key: bytes) -> bytes:
-    """Decrypt with pre-derived key — skips PBKDF2. Runs in worker process."""
+def _worker_decrypt_keyed_nocompress(chunk_data: bytes, key: bytes) -> bytes:
+    """Decrypt without decompression (backward compat). Runs in worker process."""
     return decrypt_with_key(chunk_data, key)
 
 
@@ -164,10 +178,15 @@ def encrypt_chunks_parallel(chunks: List[bytes], password: str) -> List[Tuple[by
     return results
 
 
-def decrypt_chunks_parallel(chunks: List[bytes], password: str) -> List[bytes]:
+def decrypt_chunks_parallel(chunks: List[bytes], password: str,
+                            compressed: bool = True) -> List[bytes]:
     """
     Decrypt multiple chunks in parallel using ProcessPoolExecutor.
     Derives key ONCE from the first chunk's salt, then reuses for all.
+
+    Args:
+        compressed: If True, decompress after decrypt (Phase 18+).
+                    If False, skip decompression (pre-Phase 18 files).
     """
     if not chunks:
         return []
@@ -175,9 +194,10 @@ def decrypt_chunks_parallel(chunks: List[bytes], password: str) -> List[bytes]:
     first_salt = chunks[0][1:1 + SALT_SIZE]
     key, _ = derive_key(password, first_salt)
     pool = _get_pool()
-    futures = [pool.submit(_worker_decrypt_keyed, chunk, key) for chunk in chunks]
+    worker = _worker_decrypt_keyed if compressed else _worker_decrypt_keyed_nocompress
+    futures = [pool.submit(worker, chunk, key) for chunk in chunks]
     results = [f.result() for f in futures]
-    logger.debug(f"Parallel decrypted {len(chunks)} chunks across {_MAX_WORKERS} workers (key cached)")
+    logger.debug(f"Parallel decrypted {len(chunks)} chunks across {_MAX_WORKERS} workers (compressed={compressed})")
     return results
 
 

@@ -1,7 +1,7 @@
 """DistriStore — Chunk Pipeline (Streaming Architecture)
 
 Phase 3: Instead of Read All → Chunk All → Encrypt All → Send All,
-this pipeline does: Read 256KB → Encrypt → Store → Read next 256KB.
+this pipeline does: Read 256KB → Compress → Encrypt → Store → Read next.
 
 The network transmits chunk[0] while the CPU encrypts chunk[1].
 Uses asyncio + ProcessPoolExecutor for true overlap.
@@ -9,6 +9,8 @@ Uses asyncio + ProcessPoolExecutor for true overlap.
 Phase 10: Advanced Throughput
   - Dynamic chunk sizing via get_optimal_chunk_size()
   - Disk writes wrapped in asyncio.to_thread (non-blocking)
+
+Phase 18: Per-chunk zstd compression in the pipeline workers.
 """
 
 import asyncio
@@ -111,11 +113,12 @@ async def pipeline_chunk_and_store(
         await pending_store
 
     manifest.merkle_root = compute_merkle_root(chunk_hashes)
+    manifest.compression = "zstd"
 
     logger.info(
         f"Pipeline chunked '{path.name}' ({file_size} bytes) "
         f"-> {len(manifest.chunks)} chunks "
-        f"({'encrypted' if password else 'plain'}) "
+        f"({'encrypted' if password else 'plain'}, zstd) "
         f"[pipelined, {_MAX_WORKERS} workers]"
     )
     return manifest
@@ -164,10 +167,21 @@ async def pipeline_merge_to_disk(
 
             # Decrypt in process pool
             if info.encrypted and password:
-                from backend.file_engine.crypto import _worker_decrypt
-                plaintext = await loop.run_in_executor(pool, _worker_decrypt, data, password)
+                from backend.file_engine.crypto import _worker_decrypt_keyed, _worker_decrypt_keyed_nocompress, derive_key, SALT_SIZE
+                # Derive key from first chunk salt
+                first_salt = data[1:1 + SALT_SIZE]
+                dec_key, _ = derive_key(password, first_salt)
+                if manifest.compression == "zstd":
+                    plaintext = await loop.run_in_executor(pool, _worker_decrypt_keyed, data, dec_key)
+                else:
+                    plaintext = await loop.run_in_executor(pool, _worker_decrypt_keyed_nocompress, data, dec_key)
             else:
-                plaintext = data
+                # Unencrypted: may still need decompression
+                if manifest.compression == "zstd":
+                    import zstandard as _zstd
+                    plaintext = _zstd.ZstdDecompressor().decompress(data)
+                else:
+                    plaintext = data
 
             # Non-blocking disk write via asyncio.to_thread
             await asyncio.to_thread(f.write, plaintext)

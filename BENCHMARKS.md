@@ -1,7 +1,7 @@
 # DistriStore — Benchmarks
 
-> All benchmarks run on the same machine with AES-256-GCM encryption + Merkle verification enabled.
-> Last verified: 2026-05-03 (Phase 17 — Binary Protocol + SQLite Persistence)
+> All benchmarks run on the same machine with AES-256-GCM encryption + zstd compression + Merkle verification enabled.
+> Last verified: 2026-05-03 (Phase 18 — ZSTD Stream Compression)
 
 ---
 
@@ -260,6 +260,43 @@ The `/download/{hash}` endpoint uses `FileResponse` + `BackgroundTasks` for O(1)
 ```
 
 > The 4-byte length prefix is critical: msgpack binary output can contain `0x0A` (newline) bytes, making newline-delimited framing unsafe for binary chunk data.
+
+---
+
+## 📊 14. ZSTD Stream Compression (Phase 18)
+
+### Compression Pipeline
+
+```
+Upload:  Read chunk → zstd.compress(level=3) → AES-256-GCM encrypt → Store
+Download: Load chunk → AES-256-GCM decrypt → zstd.decompress() → Write
+```
+
+### Characteristics
+
+| Property | Value |
+|----------|-------|
+| **Algorithm** | Zstandard (zstd) |
+| **Level** | 3 (default — optimal speed/ratio balance) |
+| **Scope** | Per-chunk (O(1) memory) |
+| **Execution** | Inside `ProcessPoolExecutor` workers (GIL bypassed) |
+| **Backward compat** | Manifests without `compression: "zstd"` skip decompression |
+| **SQLite migration** | `ALTER TABLE manifests ADD COLUMN compression TEXT DEFAULT ''` |
+
+### Upload API Response
+
+```json
+{
+  "compressed_size": 45231,
+  "compression_ratio": 2.26,
+  "compression": "zstd"
+}
+```
+
+> **Compression ratio varies by data type:**
+> - Text/code files: 3-10x compression
+> - Binary/structured data: 1.5-3x compression
+> - Already compressed data (JPEG, MP4, ZIP): ~1x (no benefit, minimal overhead)
 
 ---
 

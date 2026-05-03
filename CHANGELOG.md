@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.1.0] - 2026-05-03
+
+### Added — ZSTD Stream Compression (Phase 18)
+- Per-chunk Zstandard compression (`zstandard>=0.22.0`) at level 3 for optimal speed/ratio balance.
+- Compression runs inside `ProcessPoolExecutor` workers alongside AES-256-GCM crypto — fully bypasses the GIL.
+- Upload flow: **Read → Compress → Encrypt → Store** (O(1) memory per chunk).
+- Download flow: **Load → Decrypt → Decompress → Write** (O(1) memory per chunk).
+- Backward-compatible: manifests without `compression: "zstd"` skip decompression (pre-Phase-18 files).
+- SQLite schema migration: `compression` column auto-added to `manifests` table via `ALTER TABLE`.
+- Upload API now returns `compressed_size`, `compression_ratio`, and `compression` fields.
+
+---
+
 ## [2.0.0] - 2026-05-03
 
 ### Added — Storage Quotas & LRU Eviction (Phase 14)
