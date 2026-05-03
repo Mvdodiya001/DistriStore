@@ -1518,3 +1518,19 @@ body::before {
     width: 90vw;
   }
 }
+
+/* ── Download Page Actions ───────────────────────────────────── */
+.download-actions {
+  display: flex;
+  gap: 12px;
+}
+
+.download-actions .btn {
+  flex: 1;
+}
+
+@media (max-width: 480px) {
+  .download-actions {
+    flex-direction: column;
+  }
+}
