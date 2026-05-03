@@ -1,6 +1,7 @@
 """
 DistriStore — FastAPI Routes
-REST endpoints for upload, download, status, and WebSocket chat.
+REST endpoints for upload, download, status, WebSocket chat,
+and resumable download management (Phase 21).
 """
 
 import os
@@ -23,14 +24,21 @@ router = APIRouter()
 _node = None
 _local_store = None
 _routing = None
+_download_manager = None
 
 
 def init_routes(node, local_store, routing):
     """Inject dependencies into routes."""
-    global _node, _local_store, _routing
+    global _node, _local_store, _routing, _download_manager
     _node = node
     _local_store = local_store
     _routing = routing
+
+    # Phase 21: Initialize the download manager
+    from backend.api.download_manager import DownloadManager
+    storage_dir = str(local_store.storage_dir) if local_store else ".storage"
+    _download_manager = DownloadManager(storage_dir)
+
 
 
 # ── Phase 19: WebSocket Chat Manager ─────────────────────────────────
@@ -440,6 +448,141 @@ async def get_chunk(chunk_hash: str):
         media_type="application/octet-stream",
         headers={"X-Chunk-Hash": chunk_hash},
     )
+
+
+# ── Phase 21: Resumable Downloads ────────────────────────────────────
+
+def _build_chunk_loader():
+    """Build the async chunk loader with local + peer fallback."""
+    import httpx
+
+    async def load_chunk(chunk_hash: str) -> bytes:
+        # Try local first
+        data = _local_store.load_chunk(chunk_hash)
+        if data is not None:
+            return data
+        # Peer fallback
+        peers = await _node.state.get_alive_peers()
+        for nid, peer in peers.items():
+            try:
+                async with httpx.AsyncClient(timeout=30) as client:
+                    resp = await client.get(
+                        f"http://{peer.ip}:{peer.api_port}/chunk/{chunk_hash}"
+                    )
+                if resp.status_code == 200:
+                    _local_store.save_chunk(chunk_hash, resp.content)
+                    return resp.content
+            except Exception:
+                continue
+        raise FileNotFoundError(f"Chunk {chunk_hash[:16]}... not available")
+
+    return load_chunk
+
+
+@router.get("/downloads")
+async def list_downloads():
+    """List all active, paused, and completed downloads with progress."""
+    if not _download_manager:
+        raise HTTPException(503, "Download manager not initialized")
+    return {"downloads": _download_manager.get_all_downloads()}
+
+
+@router.post("/download/{file_hash}/start")
+async def start_resumable_download(file_hash: str, password: str = ""):
+    """
+    Start a new resumable download or resume an existing one.
+    Returns the download state with progress tracking.
+    """
+    if not _local_store or not _node or not _download_manager:
+        raise HTTPException(503, "Node not initialized")
+
+    import httpx
+    from backend.file_engine.chunker import FileManifest
+
+    # Load or fetch manifest
+    manifest_dict = _local_store.load_manifest(file_hash)
+    if not manifest_dict:
+        peers = await _node.state.get_alive_peers()
+        for nid, peer in peers.items():
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.get(
+                        f"http://{peer.ip}:{peer.api_port}/manifest/{file_hash}"
+                    )
+                if resp.status_code == 200:
+                    manifest_dict = resp.json()
+                    _local_store.save_manifest(file_hash, manifest_dict)
+                    break
+            except Exception:
+                continue
+
+    if not manifest_dict:
+        raise HTTPException(404, f"File not found: {file_hash}")
+
+    state = await _download_manager.start_download(
+        file_hash=file_hash,
+        manifest_dict=manifest_dict,
+        password=password,
+        load_chunk_fn=_build_chunk_loader(),
+        local_store=_local_store,
+    )
+
+    return {"status": "started", "download": state.to_dict()}
+
+
+@router.post("/download/{file_hash}/pause")
+async def pause_download(file_hash: str):
+    """Pause an active download and save its progress to a .resume file."""
+    if not _download_manager:
+        raise HTTPException(503, "Download manager not initialized")
+
+    state = await _download_manager.pause_download(file_hash)
+    if not state:
+        raise HTTPException(404, f"No active download for: {file_hash}")
+
+    return {"status": "paused", "download": state.to_dict()}
+
+
+@router.post("/download/{file_hash}/resume")
+async def resume_download(file_hash: str, password: str = ""):
+    """Resume a paused download from its last saved checkpoint."""
+    if not _download_manager or not _local_store:
+        raise HTTPException(503, "Node not initialized")
+
+    state = await _download_manager.resume_download(
+        file_hash=file_hash,
+        password=password,
+        load_chunk_fn=_build_chunk_loader(),
+        local_store=_local_store,
+    )
+
+    if not state:
+        raise HTTPException(404, f"No paused download for: {file_hash}")
+
+    return {"status": "resumed", "download": state.to_dict()}
+
+
+@router.get("/download/{file_hash}/progress")
+async def download_progress(file_hash: str):
+    """Get the current progress of a download."""
+    if not _download_manager:
+        raise HTTPException(503, "Download manager not initialized")
+
+    state = _download_manager.get_download(file_hash)
+    if not state:
+        raise HTTPException(404, f"No download tracked for: {file_hash}")
+
+    return {"download": state.to_dict()}
+
+
+@router.post("/downloads/clear")
+async def clear_downloads():
+    """Remove completed and errored downloads from the tracker."""
+    if not _download_manager:
+        raise HTTPException(503, "Download manager not initialized")
+
+    _download_manager.clear_completed()
+    return {"status": "cleared", "downloads": _download_manager.get_all_downloads()}
 
 
 # ── Phase 19: WebSocket Chat ─────────────────────────────────────────

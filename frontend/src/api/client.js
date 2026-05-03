@@ -121,4 +121,38 @@ export function triggerBlobDownload(blob, filename) {
   setTimeout(() => URL.revokeObjectURL(url), 100)
 }
 
+// ── Phase 21: Resumable Downloads ─────────────────────────────
+
+export async function startResumableDownload(fileHash, password = '') {
+  const params = password ? { password } : {}
+  const { data } = await api.post(`/download/${fileHash}/start`, null, { params })
+  return data
+}
+
+export async function pauseDownload(fileHash) {
+  const { data } = await api.post(`/download/${fileHash}/pause`)
+  return data
+}
+
+export async function resumeDownload(fileHash, password = '') {
+  const params = password ? { password } : {}
+  const { data } = await api.post(`/download/${fileHash}/resume`, null, { params })
+  return data
+}
+
+export async function fetchDownloadProgress(fileHash) {
+  const { data } = await api.get(`/download/${fileHash}/progress`)
+  return data.download
+}
+
+export async function fetchAllDownloads() {
+  const { data } = await api.get('/downloads')
+  return data.downloads || {}
+}
+
+export async function clearCompletedDownloads() {
+  const { data } = await api.post('/downloads/clear')
+  return data
+}
+
 export default api

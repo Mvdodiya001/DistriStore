@@ -6,7 +6,7 @@
  */
 
 import { create } from 'zustand'
-import { fetchStatus, fetchFiles } from '../api/client'
+import { fetchStatus, fetchFiles, fetchAllDownloads } from '../api/client'
 
 const MAX_HISTORY = 60 // Keep 60 data points (3min at 3s intervals)
 
@@ -21,6 +21,9 @@ const useNetworkStore = create((set, get) => ({
   // ── Performance History (for charts) ────────────────────────
   latencyHistory: [],
   throughputHistory: [],
+
+  // ── Phase 21: Active Downloads ──────────────────────────────
+  activeDownloads: {},
 
   // ── Polling ─────────────────────────────────────────────────
   pollingInterval: null,
@@ -46,9 +49,10 @@ const useNetworkStore = create((set, get) => ({
 
   refresh: async () => {
     try {
-      const [statusData, filesData] = await Promise.all([
+      const [statusData, filesData, downloadsData] = await Promise.all([
         fetchStatus(),
         fetchFiles(),
+        fetchAllDownloads().catch(() => ({})),
       ])
 
       const now = Date.now()
@@ -57,6 +61,7 @@ const useNetworkStore = create((set, get) => ({
       set((state) => ({
         status: statusData,
         files: filesData,
+        activeDownloads: downloadsData,
         isConnected: true,
         lastUpdate: now,
         error: null,

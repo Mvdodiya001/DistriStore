@@ -13,6 +13,7 @@ import PreviewModal, { isPreviewable } from '../components/ui/PreviewModal'
 import NetworkTopology from '../components/network/NetworkTopology'
 import PeerTable from '../components/network/PeerTable'
 import TransferSpeedChart from '../components/network/TransferSpeedChart'
+import ActiveDownloads from '../components/network/ActiveDownloads'
 
 function formatBytes(bytes) {
   if (!bytes) return '0 B'
@@ -67,6 +68,9 @@ export default function DashboardPage() {
 
       {/* Peer Table */}
       <PeerTable />
+
+      {/* Phase 21: Active Downloads */}
+      <ActiveDownloads />
 
       {/* Stored Files */}
       <Card title="Stored Files" icon="📁">
