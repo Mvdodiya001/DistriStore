@@ -21,6 +21,7 @@ from typing import Optional, Callable, Awaitable
 
 from backend.file_engine.crypto import (
     encrypt, decrypt, sha256_hash, _worker_encrypt,
+    _worker_encrypt_keyed, derive_key,
     _get_pool, _MAX_WORKERS,
 )
 from backend.file_engine.chunker import (
@@ -85,14 +86,29 @@ async def pipeline_chunk_and_store(
     chunk_hashes = []
     pending_store = None  # Track the previous store task for overlap
 
+    # Pre-derive key ONCE (avoids 100K PBKDF2 iterations per chunk)
+    enc_key, enc_salt = None, None
+    if password:
+        enc_key, enc_salt = derive_key(password)
+
+    # Phase 18: reusable compressor for unencrypted path
+    import zstandard as _zstd
+    compressor = _zstd.ZstdCompressor(level=3)
+
     for idx, raw_bytes in _stream_chunks(file_path, chunk_size):
         # Encrypt in process pool (CPU-bound, bypasses GIL)
         if password:
-            ct, ch = await loop.run_in_executor(pool, _worker_encrypt, raw_bytes, password)
+            # _worker_encrypt_keyed: Compress → Encrypt → Hash
+            ct, ch = await loop.run_in_executor(
+                pool, _worker_encrypt_keyed, raw_bytes, enc_key, enc_salt
+            )
             encrypted = True
         else:
-            ct = raw_bytes
-            ch = await loop.run_in_executor(pool, sha256_hash, raw_bytes)
+            # No encryption but still compress (zstd)
+            ct = await loop.run_in_executor(
+                pool, compressor.compress, raw_bytes
+            )
+            ch = await loop.run_in_executor(pool, sha256_hash, ct)
             encrypted = False
 
         chunk_hashes.append(ch)
