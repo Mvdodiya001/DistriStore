@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [2.2.0] - 2026-05-03
+
+### Added — P2P Swarm Chat & WebSockets (Phase 19)
+- Real-time decentralized chat bridged to the React frontend via FastAPI WebSockets (`/ws/chat`).
+- TCP gossip flood protocol using the new `MSG_CHAT` packet type.
+- Echo loop prevention using an LRU-like message ID cache (`_seen_chat_ids`).
+- Regex-based hash detection in the frontend UI (`/\b[a-f0-9]{64}\b/gi`).
+- Detected hashes dynamically render as interactive preview/download buttons directly in the chat stream.
+
+### Added — O(1) In-Browser Previews (Phase 20)
+- New `/preview/{file_hash}` endpoint using FastAPI's `StreamingResponse` for memory-safe inline file streaming.
+- Built a highly optimized async generator (`pipeline_stream_file()`) that reads, decrypts, and decompresses individual chunks sequentially without buffering the entire file.
+- MIME-type auto-detection using Python's `mimetypes` library.
+- Premium React `PreviewModal` overlay dynamically renders `<img>`, `<video>`, `<audio>`, or `<iframe>` depending on the file extension.
+- Integrated an encrypted file password prompt dialog prior to initializing the preview stream.
+
+---
+
 ## [2.1.0] - 2026-05-03
 
 ### Added — ZSTD Stream Compression (Phase 18)

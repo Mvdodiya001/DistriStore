@@ -41,11 +41,11 @@ DistriStore is a **LAN-optimized, trackerless P2P distributed file storage syste
 ┌──────────────────────────────────────────────────────────┐
 │                  PRESENTATION LAYER                      │
 │          React 19 + Vite 8 + Zustand + Recharts          │
-│     Dashboard │ Upload │ Download │ Settings Pages        │
+│ Dashboard │ Upload │ Download │ Settings │ Swarm Chat    │
 ├──────────────────────────────────────────────────────────┤
 │                   APPLICATION LAYER                      │
-│               FastAPI + asyncio + uvicorn                 │
-│  API Routes │ File Engine │ DHT │ Replication │ Healing   │
+│               FastAPI + asyncio + uvicorn                │
+│  API Routes │ File Engine │ DHT │ Replication │ Chat WS  │
 ├──────────────────────────────────────────────────────────┤
 │               NETWORK & STORAGE LAYER                    │
 │    UDP:50000 (Discovery+HMAC) │ TCP:50001 (msgpack P2P)    │
@@ -63,7 +63,8 @@ DistriStore is a **LAN-optimized, trackerless P2P distributed file storage syste
 | `ReplicationEngine` | RoutingTable, Selector, ConnectionManager | Distribute chunks to peers |
 | `SelfHealingManager` | RoutingTable, LocalStore | Auto re-replicate on node failure |
 | `HeartbeatMonitor` | ConnectionManager | Ping/pong peer liveness |
-| `Zustand Store` | Axios API Client | Frontend global state |
+| `ChatManager` | DistriNode, FastAPI WebSockets | Bridging WebSockets to TCP Swarm Chat |
+| `Zustand Store` | Axios API Client, WebSockets | Frontend global state |
 
 ---
 
@@ -254,6 +255,7 @@ DistriStore nodes communicate over **three network channels**: UDP for discovery
 | `CHUNK_ACK` | Holder → Sender | `chunk_hash, index` | Sliding window acknowledgment |
 | `FIND_NODE` | Any → Any | `target_hash` | DHT lookup |
 | `FIND_RESULT` | Any → Any | `target_hash, closest_peers[]` | DHT lookup response |
+| `CHAT` | Any → Any | `sender_id, sender_name, text, msg_id, timestamp` | P2P Swarm Chat gossip |
 | `PING` | Monitor → Peer | `sender_id` | Liveness check |
 | `PONG` | Peer → Monitor | `uptime, free_space` | Liveness response |
 
@@ -264,9 +266,11 @@ DistriStore nodes communicate over **three network channels**: UDP for discovery
 | `GET` | `/status` | Frontend polling (3s) | Node status, peers, storage stats |
 | `POST` | `/upload` | Frontend upload form | Chunk + encrypt + store + replicate |
 | `GET` | `/download/{hash}` | Frontend / Cross-node | Download with peer fallback |
+| `GET` | `/preview/{hash}` | Frontend | In-browser streaming preview (O(1) memory) |
 | `GET` | `/files?local_only=` | Frontend / Cross-node | File listing (local + peer merge) |
 | `GET` | `/manifest/{hash}` | Cross-node download | Fetch manifest JSON from peer |
 | `GET` | `/chunk/{hash}` | Cross-node download | Fetch raw chunk bytes from peer |
+| `WS`  | `/ws/chat` | Frontend | WebSocket bridge for real-time P2P Swarm Chat |
 
 ---
 

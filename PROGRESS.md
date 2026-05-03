@@ -28,9 +28,11 @@ Phase 15 (Swarm Auth)     ██████████████████
 Phase 16 (SQLite)         ████████████████████ 100% ✅
 Phase 17 (Binary Proto)   ████████████████████ 100% ✅
 Phase 18 (ZSTD Compress)  ████████████████████ 100% ✅
+Phase 19 (Swarm Chat)     ████████████████████ 100% ✅
+Phase 20 (In-Browser)     ████████████████████ 100% ✅
 ```
 
-**Current Position: All 20 phases complete. V2.1 — ZSTD Stream Compression.**
+**Current Position: All 20 phases complete. V2.2 — Swarm Chat & Previews.**
 
 ---
 
@@ -433,6 +435,45 @@ Phase 18 (ZSTD Compress)  ██████████████████
 
 ---
 
+## 🟢 Phase 19 — P2P Swarm Chat & WebSockets
+
+| Component | File | Status |
+|-----------|------|--------|
+| Protocol `MSG_CHAT` | `backend/network/protocol.py` | ✅ |
+| TCP CHAT Router | `backend/node/node.py` | ✅ |
+| WebSocket Bridge | `backend/api/routes.py` | ✅ |
+| Zustand Chat State | `frontend/src/store/useNetworkStore.js` | ✅ |
+| Floating Chat Drawer | `frontend/src/components/network/ChatDrawer.jsx` | ✅ |
+| Hash Detection Regex | `frontend/src/components/network/ChatDrawer.jsx` | ✅ |
+
+### Features
+- Real-time P2P chat bridged to web frontend via WebSockets
+- Gossip flood protocol with `msg_id` deduplication to prevent broadcast loops
+- Live regex detection of SHA-256 hashes (`/\b[a-f0-9]{64}\b/gi`)
+- Detected hashes rendered as interactive download/preview buttons
+
+---
+
+## 🟢 Phase 20 — O(1) In-Browser Previews
+
+| Component | File | Status |
+|-----------|------|--------|
+| Streaming Generator | `backend/file_engine/pipeline.py` | ✅ |
+| `/preview` Endpoint | `backend/api/routes.py` | ✅ |
+| PreviewModal Component | `frontend/src/components/ui/PreviewModal.jsx` | ✅ |
+| Dashboard UI Integration | `frontend/src/pages/DashboardPage.jsx` | ✅ |
+| Download UI Integration | `frontend/src/pages/DownloadPage.jsx` | ✅ |
+| Websocket backend fix | `requirements.txt` | ✅ |
+
+### Architecture
+- Decrypts + decompresses chunks dynamically via `StreamingResponse`
+- $O(1)$ memory safety (never loads full file)
+- Auto-detects MIME type via `mimetypes.guess_type`
+- Renders `<img>`, `<video>`, `<audio>`, `<iframe>` based on file extension
+- Cross-node fetching support for remote previews
+
+---
+
 ## 📁 Project Structure
 
 ```
@@ -472,9 +513,9 @@ distristore/
 │       ├── api/client.js            # Singleton Axios + service functions
 │       ├── store/useNetworkStore.js  # Zustand auto-polling global state
 │       ├── components/
-│       │   ├── ui/                  # Card, Button, CopyButton, StatCard
+│       │   ├── ui/                  # Card, Button, CopyButton, StatCard, PreviewModal
 │       │   ├── layout/              # Header, Sidebar
-│       │   └── network/             # NetworkTopology, TransferSpeedChart, PeerTable
+│       │   └── network/             # NetworkTopology, TransferSpeedChart, PeerTable, ChatDrawer
 │       ├── pages/                   # Dashboard, Upload, Download, Settings
 │       ├── App.jsx                  # BrowserRouter + layout shell
 │       └── index.css                # Design system tokens

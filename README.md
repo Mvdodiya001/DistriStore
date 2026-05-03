@@ -274,6 +274,8 @@ distristore/
 | **Binary Protocol** | `msgpack` TCP framing eliminates base64 — ~33% bandwidth savings |
 | **Swarm Auth (PSK)** | HMAC-SHA256 on every UDP broadcast and TCP connection |
 | **ZSTD Compression** | Per-chunk Zstandard compression with backward-compatible manifests |
+| **Swarm Chat** | Decentralized real-time chat with regex hash detection (`/\b[a-f0-9]{64}\b/gi`) |
+| **In-Browser Previews** | O(1) memory inline streaming for images/video/audio/PDFs via FastAPI `StreamingResponse` |
 
 ---
 
@@ -284,9 +286,11 @@ distristore/
 | `GET`  | `/status` | Node status, peers (with `api_port`), uptime, storage |
 | `POST` | `/upload` | Upload + chunk + encrypt + Merkle manifest + replicate |
 | `GET`  | `/download/{hash}?password=` | Download + decrypt + merge — fetches from peers if not local |
+| `GET`  | `/preview/{hash}?password=` | In-browser streaming preview (O(1) memory, MIME auto-detect) |
 | `GET`  | `/files?local_only=false` | List files (local + peer merged, deduplicated) |
 | `GET`  | `/manifest/{hash}` | Fetch file manifest (used by cross-node download) |
 | `GET`  | `/chunk/{hash}` | Fetch raw chunk bytes (used by cross-node download) |
+| `WS`   | `/ws/chat` | WebSocket bridge for real-time P2P Swarm Chat |
 
 <div align="center">
   <img src="docs/sequence_upload.png" alt="Upload Sequence" width="48%"/>
