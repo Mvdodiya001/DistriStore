@@ -38,6 +38,14 @@ def build_message(msg_type: str, sender_id: str, **kwargs) -> dict:
     return msg
 
 
+def auth_handshake_msg(node_id: str, swarm_key: str) -> dict:
+    """Build an authentication message."""
+    import hmac
+    import hashlib
+    sig = hmac.new(swarm_key.encode(), node_id.encode(), hashlib.sha256).hexdigest()
+    return {"type": "AUTH", "node_id": node_id, "signature": sig}
+
+
 def store_chunk_msg(sender_id: str, chunk_hash: str, chunk_data_b64: str,
                     file_hash: str = "") -> dict:
     """Build a STORE_CHUNK message."""

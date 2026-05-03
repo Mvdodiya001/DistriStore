@@ -58,21 +58,9 @@ async def run_test():
 
     # Manually send discovery messages to simulate LAN broadcast
     # (on loopback, broadcast doesn't work normally)
-    import json, time
-    hello_a = json.dumps({
-        "type": "HELLO",
-        "node_id": state_a.node_id,
-        "name": state_a.name,
-        "tcp_port": state_a.tcp_port,
-        "timestamp": time.time(),
-    }).encode()
-    hello_b = json.dumps({
-        "type": "HELLO",
-        "node_id": state_b.node_id,
-        "name": state_b.name,
-        "tcp_port": state_b.tcp_port,
-        "timestamp": time.time(),
-    }).encode()
+    import time
+    hello_a = disc_a._build_hello()
+    hello_b = disc_b._build_hello()
 
     # Simulate: A receives B's hello, B receives A's hello
     disc_a.datagram_received(hello_b, ("127.0.0.1", 50002))

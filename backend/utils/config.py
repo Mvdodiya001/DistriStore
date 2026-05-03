@@ -25,6 +25,7 @@ class NetworkConfig:
     broadcast_address: str = "255.255.255.255"
     discovery_interval: int = 5
     peer_timeout: int = 15
+    swarm_key: str = "default_distristore_secret"
 
 
 @dataclass
@@ -32,6 +33,7 @@ class StorageConfig:
     """Chunk storage settings."""
     chunk_dir: str = ".storage"
     chunk_size: int = 262144  # 256 KB
+    max_storage_mb: int = 1024
 
 
 @dataclass

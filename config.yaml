@@ -25,12 +25,18 @@ network:
   # Timeout for considering a peer dead (seconds)
   peer_timeout: 15
 
+  # Secret key for zero-trust swarm authentication
+  swarm_key: "default_distristore_secret"
+
 storage:
   # Directory to store file chunks
   chunk_dir: ".storage"
 
   # Size of each chunk in bytes (256 KB)
   chunk_size: 262144
+
+  # Maximum storage capacity in Megabytes
+  max_storage_mb: 1024
 
 replication:
   # Number of copies to maintain across the network

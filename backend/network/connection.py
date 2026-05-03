@@ -73,7 +73,33 @@ class ConnectionManager:
         conn = PeerConnection(reader, writer)
 
         try:
-            # Expect a HANDSHAKE as the first message
+            # Phase 15: Expect an AUTH message first
+            from backend.utils.config import get_config
+            import hmac
+            import hashlib
+            key = get_config().network.swarm_key.encode()
+            
+            try:
+                auth_msg = await asyncio.wait_for(conn.receive(), timeout=2.0)
+            except asyncio.TimeoutError:
+                logger.debug(f"AUTH timeout from {addr}")
+                await conn.close()
+                return
+                
+            if not auth_msg or auth_msg.get("type") != "AUTH":
+                logger.debug(f"Missing or invalid AUTH from {addr}")
+                await conn.close()
+                return
+                
+            node_id = auth_msg.get("node_id", "")
+            sig = auth_msg.get("signature", "")
+            expected = hmac.new(key, node_id.encode(), hashlib.sha256).hexdigest()
+            if not hmac.compare_digest(sig, expected):
+                logger.debug(f"Rejected unauthorized TCP connection from {addr}")
+                await conn.close()
+                return
+
+            # Expect a HANDSHAKE next
             msg = await conn.receive()
             if not msg or msg.get("type") != "HANDSHAKE":
                 logger.warning(f"Bad handshake from {addr}, dropping")
@@ -123,6 +149,13 @@ class ConnectionManager:
         try:
             reader, writer = await asyncio.open_connection(ip, port, limit=STREAM_LIMIT)
             conn = PeerConnection(reader, writer)
+
+            # Phase 15: Send AUTH immediately after connecting
+            from backend.utils.config import get_config
+            from backend.network.protocol import auth_handshake_msg
+            key = get_config().network.swarm_key
+            auth_msg = auth_handshake_msg(self.state.node_id, key)
+            await conn.send(auth_msg)
 
             # Send handshake (include tcp_port + api_port for peer registration)
             await conn.send({

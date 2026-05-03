@@ -30,7 +30,7 @@ class DistriNode:
         self._discovery_protocol = None
         self._tasks: list[asyncio.Task] = []
 
-    async def start(self) -> None:
+    async def start(self, local_store=None) -> None:
         """Boot the node: TCP server + UDP discovery + peer connector."""
         net = self.config.network
 
@@ -52,6 +52,12 @@ class DistriNode:
         self._tasks.append(asyncio.create_task(
             self._peer_connector_loop()
         ))
+        
+        if local_store:
+            from backend.advanced.garbage_collector import storage_monitor_loop
+            self._tasks.append(asyncio.create_task(
+                storage_monitor_loop(local_store)
+            ))
 
         logger.info(
             f"Node [{self.state.name}] started | "

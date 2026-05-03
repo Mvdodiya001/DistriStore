@@ -90,6 +90,36 @@ class LocalStore:
                 total += f.stat().st_size
         return total
 
+    def get_total_storage_size(self) -> int:
+        """Alias for get_storage_size to match the Phase 14 spec."""
+        return self.get_storage_size()
+
+    def evict_oldest_chunks(self, target_bytes_to_free: int) -> int:
+        """
+        LRU Logic: Sorts all .bin chunk files from oldest to newest access time.
+        Deletes the oldest chunks one by one until target_bytes_to_free is achieved.
+        """
+        chunks = list(self.storage_dir.glob("chunk_*.bin"))
+        if not chunks:
+            return 0
+        
+        # Sort by access time (oldest first)
+        chunks.sort(key=lambda f: f.stat().st_atime)
+        
+        freed = 0
+        for f in chunks:
+            if freed >= target_bytes_to_free:
+                break
+            try:
+                size = f.stat().st_size
+                f.unlink()
+                freed += size
+                logger.info(f"Evicted chunk {f.name} (freed {size} bytes, LRU)")
+            except Exception as e:
+                logger.error(f"Failed to evict {f.name}: {e}")
+        
+        return freed
+
     def get_free_space(self) -> int:
         """Free space on the partition holding the storage dir."""
         import shutil

@@ -46,6 +46,12 @@ export default function SettingsPage() {
             <span className="setting-label">Integrity</span>
             <span className="setting-value badge-green">Merkle Tree + GCM Auth Tag</span>
           </div>
+          {status?.swarm_auth_active && (
+            <div className="setting-row">
+              <span className="setting-label">Network Trust</span>
+              <span className="setting-value badge-green">Swarm PSK: Active</span>
+            </div>
+          )}
           <div className="setting-row">
             <span className="setting-label">Chunk Size</span>
             <span className="setting-value">256 KB</span>

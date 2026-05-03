@@ -64,7 +64,7 @@ async def lifespan(app):
     # Set the API port on node state so HELLO broadcasts include it
     config = get_config()
     _node.state.api_port = int(os.environ.get("DS_API_PORT", config.api.port))
-    await _node.start()
+    await _node.start(_store)
     logger.info("DistriStore node started alongside API server")
     yield
     await _node.stop()

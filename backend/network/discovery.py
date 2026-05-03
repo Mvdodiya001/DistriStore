@@ -12,6 +12,8 @@ import json
 import os
 import socket
 import time
+import hmac
+import hashlib
 from typing import Optional
 
 import psutil
@@ -78,9 +80,27 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
 
     def datagram_received(self, data: bytes, addr: tuple):
         try:
-            msg = json.loads(data.decode())
+            wrapper = json.loads(data.decode())
         except (json.JSONDecodeError, UnicodeDecodeError):
             return
+
+        payload = wrapper.get("payload")
+        signature = wrapper.get("signature")
+
+        if not payload or not signature:
+            logger.debug("Rejected unauthorized UDP broadcast")
+            return
+
+        from backend.utils.config import get_config
+        key = get_config().network.swarm_key.encode()
+        payload_str = json.dumps(payload, sort_keys=True)
+        expected = hmac.new(key, payload_str.encode(), hashlib.sha256).hexdigest()
+
+        if not hmac.compare_digest(signature, expected):
+            logger.debug(f"Rejected unauthorized UDP broadcast: {payload_str} sig={signature} exp={expected}")
+            return
+
+        msg = payload
 
         if msg.get("type") != "HELLO":
             return
@@ -120,7 +140,7 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
     def _build_hello(self) -> bytes:
         """Build a HELLO message with health score and dynamic TCP port."""
         health = compute_health_score()
-        return json.dumps({
+        payload = {
             "type": "HELLO",
             "node_id": self.state.node_id,
             "name": self.state.name,
@@ -129,7 +149,13 @@ class DiscoveryProtocol(asyncio.DatagramProtocol):
             "uptime": self.state.uptime,
             "timestamp": time.time(),
             "health": health,
-        }).encode()
+        }
+        from backend.utils.config import get_config
+        key = get_config().network.swarm_key.encode()
+        payload_str = json.dumps(payload, sort_keys=True)
+        sig = hmac.new(key, payload_str.encode(), hashlib.sha256).hexdigest()
+        
+        return json.dumps({"payload": payload, "signature": sig}).encode()
 
     async def broadcast_loop(self):
         logger.info(

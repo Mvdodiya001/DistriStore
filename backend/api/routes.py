@@ -41,6 +41,13 @@ async def get_status():
     status = await _node.state.status()
     status["local_chunks"] = _local_store.list_chunks() if _local_store else []
     status["storage_used"] = _local_store.get_storage_size() if _local_store else 0
+    
+    from backend.utils.config import get_config
+    config = get_config()
+    status["storage_used_mb"] = round(status["storage_used"] / (1024 * 1024), 2)
+    status["storage_max_mb"] = config.storage.max_storage_mb
+    status["swarm_auth_active"] = True
+    
     return status
 
 
